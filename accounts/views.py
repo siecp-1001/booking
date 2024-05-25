@@ -1,12 +1,36 @@
 from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,IsAdminUser
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Enrollment
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer
+from .models import DateSlot, Booking, Enrollment,Center,Student
+from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer,CenterSerializer,StudentSerializer
 from .permissions import IsStudentOrReadOnly
-
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.decorators import action
 # Viewsets for Models
+from django.http import JsonResponse
+from .utils import list_urls
+
+def show_urls_view(request):
+    urls = list_urls()
+    return JsonResponse({'urls': urls})
+
+class CenterViewSet(viewsets.ModelViewSet):
+    queryset = Center.objects.all()
+    serializer_class = CenterSerializer
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+class StudentViewSet(viewsets.ModelViewSet):
+    queryset = Student.objects.all()
+    serializer_class = StudentSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['delete'], permission_classes=[IsAdminUser])
+    def confirm_delete(self, request, pk=None):
+        student = self.get_object()
+        student.delete()
+        return Response({'status': 'student deleted'})
+
 class DateSlotViewSet(viewsets.ModelViewSet):
     queryset = DateSlot.objects.all()
     serializer_class = DateSlotSerializer

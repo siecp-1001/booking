@@ -1,7 +1,7 @@
 from djoser import serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment
+from .models import DateSlot, Booking, Enrollment,Center,Student
 User = get_user_model()
 
 
@@ -16,11 +16,26 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         return user
 
+class CenterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Center
+        fields = ['id', 'name', 'address']
+
+class StudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = ['id', 'user', 'center']
+        depth = 1
 class DateSlotSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
     class Meta:
         model = DateSlot
-        fields = ['id', 'teacher', 'start_time', 'end_time']
+        fields = ['id', 'teacher', 'start_time', 'end_time', 'status']
         depth = 1  # To include related objects
+
+    def get_status(self, obj):
+        return 'unavailable' if Booking.objects.filter(date_slot=obj).exists() else 'available'
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:

@@ -51,12 +51,21 @@ class Teacher(models.Model):
     def __str__(self):
         return self.user.name
 
+class Center(models.Model):
+    name = models.CharField(max_length=255)
+    address = models.TextField()
+
+    def __str__(self):
+        return self.name
+    
 class Student(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='students', default=1)  # Temporary default
 
     def __str__(self):
         return self.user.name
 
+    
 class Course(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
