@@ -1,21 +1,26 @@
 from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated,IsAdminUser
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Enrollment,Center,Student
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer,CenterSerializer,StudentSerializer, CustomTokenObtainPairSerializer
+from .models import DateSlot, Booking, Enrollment, Center, Student
+from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer
 from .permissions import IsStudentOrReadOnly
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.decorators import action
-# Viewsets for Models
 from django.http import JsonResponse
 from .utils import list_urls
+from rest_framework.views import APIView
+from django.contrib.auth import get_user_model
+from rest_framework import generics
 
+from djoser import utils
+from django.conf import settings
+from djoser import utils
+from django.conf import settings
 def show_urls_view(request):
     urls = list_urls()
     return JsonResponse({'urls': urls})
-
+User = get_user_model()
 class CenterViewSet(viewsets.ModelViewSet):
     queryset = Center.objects.all()
     serializer_class = CenterSerializer
@@ -51,7 +56,6 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsStudentOrReadOnly]
 
     def get_queryset(self):
-     
         queryset = Enrollment.objects.all()
         student_id = self.request.query_params.get('student_id', None)
         if student_id is not None:
@@ -59,7 +63,6 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-       
         serializer.save(student=self.request.user.student)
 
     def destroy(self, request, *args, **kwargs):
@@ -68,6 +71,9 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "You do not have permission to delete this enrollment."}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
+class UserCreateView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = CustomUserCreateSerializer
 # Function-based views
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

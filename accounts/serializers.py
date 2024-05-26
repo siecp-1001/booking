@@ -3,19 +3,23 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import DateSlot, Booking, Enrollment, Center, Student
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
 User = get_user_model()
 
-class UserCreateSerializer(djoser_serializers.UserCreateSerializer):
-    password = serializers.CharField(write_only=True)
 
-    class Meta(djoser_serializers.UserCreateSerializer.Meta):
+class CustomUserCreateSerializer(DjoserUserCreateSerializer):
+   
+    is_teacher = serializers.BooleanField(default=False)
+    is_student = serializers.BooleanField(default=False)
+
+    class Meta(DjoserUserCreateSerializer.Meta):
         model = User
-        fields = ("id", "email", "username", "first_name", "last_name", "password", "is_teacher", "is_student")
+        fields = ('email', 'name', 'password',  'is_teacher', 'is_student')
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
         return user
-
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     @classmethod
@@ -25,7 +29,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add custom claims
         token['is_teacher'] = user.is_teacher
         token['is_student'] = user.is_student
-        
 
         return token
 
@@ -35,9 +38,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add user type information to the response data
         data['is_teacher'] = self.user.is_teacher
         data['is_student'] = self.user.is_student
-       
 
         return data
+
 class CenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Center

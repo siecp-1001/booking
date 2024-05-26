@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-
-   
+from django.db.models.signals import post_save
+from django.dispatch import receiver   
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
@@ -40,6 +40,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.name
+    
 
     def __str__(self):
         return self.email
@@ -103,3 +104,20 @@ class Enrollment(models.Model):
 
     def __str__(self):
         return f"{self.student.user.name} - {self.course.title}"
+    
+
+
+@receiver(post_save, sender=UserAccount)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        if instance.is_teacher:
+            Teacher.objects.create(user=instance)
+        elif instance.is_student:
+            Student.objects.create(user=instance)
+
+@receiver(post_save, sender=UserAccount)
+def save_user_profile(sender, instance, **kwargs):
+    if instance.is_teacher:
+        instance.teacher.save()
+    elif instance.is_student:
+        instance.student.save()    
