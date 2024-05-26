@@ -1,21 +1,43 @@
-from djoser import serializers
+from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment,Center,Student
+from .models import DateSlot, Booking, Enrollment, Center, Student
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User = get_user_model()
 
-
-class UserCreateSerializer(serializers.ModelSerializer):
+class UserCreateSerializer(djoser_serializers.UserCreateSerializer):
     password = serializers.CharField(write_only=True)
 
-    class Meta:
+    class Meta(djoser_serializers.UserCreateSerializer.Meta):
         model = User
-        fields = ("id", "email", "username", "first_name", "last_name", "password","is_teacher"," is_student")
+        fields = ("id", "email", "username", "first_name", "last_name", "password", "is_teacher", "is_student")
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
         return user
 
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Add custom claims
+        token['is_teacher'] = user.is_teacher
+        token['is_student'] = user.is_student
+        
+
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        
+        # Add user type information to the response data
+        data['is_teacher'] = self.user.is_teacher
+        data['is_student'] = self.user.is_student
+       
+
+        return data
 class CenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Center
@@ -26,6 +48,7 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = ['id', 'user', 'center']
         depth = 1
+
 class DateSlotSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
 
@@ -42,7 +65,6 @@ class BookingSerializer(serializers.ModelSerializer):
         model = Booking
         fields = ['id', 'student', 'date_slot']
         depth = 2  # To include related objects
-
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:

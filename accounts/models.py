@@ -28,6 +28,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_teacher = models.BooleanField(default=False)  # New field to indicate teacher status
     is_student = models.BooleanField(default=False)
+    
 
     objects = UserAccountManager()
 

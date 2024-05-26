@@ -3,8 +3,9 @@ from rest_framework.permissions import IsAuthenticated,IsAdminUser
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Enrollment,Center,Student
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer,CenterSerializer,StudentSerializer
+from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer,CenterSerializer,StudentSerializer, CustomTokenObtainPairSerializer
 from .permissions import IsStudentOrReadOnly
+from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
 # Viewsets for Models
@@ -19,6 +20,9 @@ class CenterViewSet(viewsets.ModelViewSet):
     queryset = Center.objects.all()
     serializer_class = CenterSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
