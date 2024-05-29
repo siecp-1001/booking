@@ -1,5 +1,5 @@
 from rest_framework.permissions import BasePermission
-
+from rest_framework import permissions
 class IsStudentOrReadOnly(BasePermission):
   
     def has_permission(self, request, view):
@@ -22,3 +22,19 @@ class IsStudentOrReadOnly(BasePermission):
         if request.method == 'DELETE':
             return not request.user.is_student
         return obj.student.user == request.user
+
+
+
+class IsCenterUser(permissions.BasePermission):
+  
+
+    def has_permission(self, request, view):
+        # Ensure the user is authenticated and is a center user
+        return request.user.is_authenticated and request.user.is_center
+
+    def has_object_permission(self, request, view, obj):
+        # Allow staff users to have full access
+        if request.user.is_staff:
+            return True
+        # Check if the center user owns the object
+        return obj.center.user == request.user

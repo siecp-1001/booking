@@ -2,9 +2,9 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Enrollment, Center, Student
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer
-from .permissions import IsStudentOrReadOnly
+from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher
+from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer
+from .permissions import IsStudentOrReadOnly,IsCenterUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from django.http import JsonResponse
@@ -33,6 +33,20 @@ class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Student.objects.all()
+        if user.is_center:
+            return Student.objects.filter(center__user=user)
+        return Student.objects.none()
+
+    def perform_create(self, serializer):
+        serializer.save(center=self.request.user.center_profile)
+
+    def perform_update(self, serializer):
+        serializer.save(center=self.request.user.center_profile)
 
     @action(detail=True, methods=['delete'], permission_classes=[IsAdminUser])
     def confirm_delete(self, request, pk=None):
@@ -74,6 +88,28 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 class UserCreateView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = CustomUserCreateSerializer
+
+
+
+
+class TeacherViewSet(viewsets.ModelViewSet):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    permission_classes = [IsCenterUser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Teacher.objects.all()
+        if user.is_center:
+            return Teacher.objects.filter(center__user=user)
+        return Teacher.objects.none()
+
+    def perform_create(self, serializer):
+        serializer.save(center=self.request.user.center_profile)
+
+    def perform_update(self, serializer):
+        serializer.save(center=self.request.user.center_profile)
 # Function-based views
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

@@ -28,6 +28,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_teacher = models.BooleanField(default=False)  # New field to indicate teacher status
     is_student = models.BooleanField(default=False)
+    is_center=models.BooleanField(default=False)
     
 
     objects = UserAccountManager()
@@ -45,27 +46,34 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.email
 
-
-class Teacher(models.Model):
-    user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
-    bio = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        return self.user.name
-
 class Center(models.Model):
-    name = models.CharField(max_length=255)
+    user = models.OneToOneField(UserAccount, on_delete=models.CASCADE, related_name='center_profile', null=True, blank=True)
+   
     address = models.TextField()
 
     def __str__(self):
-        return self.name
+        return self.user.name
+class Teacher(models.Model):
+    ROLE_CHOICES = (
+        ('lead', 'Lead Teacher'),
+        ('assistant', 'Assistant Teacher'),
+        ('substitute', 'Substitute Teacher'),
+    )
+    user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
+    bio = models.TextField(blank=True, null=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='assistant')
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True) 
+
+    def __str__(self):
+        return f"{self.user.name} - {self.get_role_display()}"
+
+
     
 class Student(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='students', default=1)  # Temporary default
-
     def __str__(self):
-        return self.user.name
+        return self.user.name if self.user else 'No User'
 
     
 class Course(models.Model):
@@ -114,10 +122,17 @@ def create_user_profile(sender, instance, created, **kwargs):
             Teacher.objects.create(user=instance)
         elif instance.is_student:
             Student.objects.create(user=instance)
+        elif instance.is_center:
+            Center.objects.create(user=instance)
 
 @receiver(post_save, sender=UserAccount)
 def save_user_profile(sender, instance, **kwargs):
     if instance.is_teacher:
         instance.teacher.save()
     elif instance.is_student:
-        instance.student.save()    
+        instance.student.save()
+    elif instance.is_center:
+        try:
+            instance.center_profile.save()
+        except Center.DoesNotExist:
+            Center.objects.create(user=instance)
