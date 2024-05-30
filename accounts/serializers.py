@@ -3,24 +3,42 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
+from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
+import secrets
+import string
 User = get_user_model()
 
 
-class CustomUserCreateSerializer(DjoserUserCreateSerializer):
-   
-    is_teacher = serializers.BooleanField(default=False)
-    is_student = serializers.BooleanField(default=False)
-    is_center=serializers.BooleanField(default=False)
+class CustomUserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, validators=[validate_password])
+    email = serializers.EmailField(required=True)
+    name = serializers.CharField(required=True)
+    is_teacher = serializers.BooleanField(required=False, default=False)
+    is_student = serializers.BooleanField(required=False, default=False)
+    is_center = serializers.BooleanField(required=False, default=False)
 
-    class Meta(DjoserUserCreateSerializer.Meta):
+    class Meta:
         model = User
-        fields = ('email', 'name', 'password',  'is_teacher', 'is_student','is_center')
+        fields = ['id', 'email', 'name', 'password', 'is_teacher', 'is_student', 'is_center', 'is_active', 'is_staff']
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def validate_email(self, value):
+        if not value:
+            raise serializers.ValidationError('Email address is required.')
+        return value
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        password = validated_data.pop('password', None)
+        if password is None:
+            password = self.generate_password()
+        user = User.objects.create_user(password=password, **validated_data)
         return user
+
+    def generate_password(self, length=12):
+        characters = string.ascii_letters + string.digits + string.punctuation
+        password = ''.join(secrets.choice(characters) for i in range(length))
+        return password
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     @classmethod
@@ -28,6 +46,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
 
         # Add custom claims
+        token['is_active'] = user.is_active
         token['is_teacher'] = user.is_teacher
         token['is_student'] = user.is_student
         token['is_center'] = user.is_center

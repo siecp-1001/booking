@@ -3,15 +3,28 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseU
 from django.db.models.signals import post_save
 from django.dispatch import receiver 
 import datetime  
+from django.core.mail import send_mail
+from django.conf import settings
+from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.db import models
+import secrets
+import string
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
             raise ValueError('User must have an email address')
         
         email = self.normalize_email(email)
+        if password is None:
+            password = self.generate_password()
         user = self.model(email=email, name=name, is_teacher=is_teacher, is_student=is_student, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
+        
+        # Send a welcome email with the password
+        self.send_welcome_email(user, password)
+        
         return user
 
     def create_superuser(self, email, name, password=None):
@@ -20,18 +33,27 @@ class UserAccountManager(BaseUserManager):
         user.is_staff = True
         user.save(using=self._db)
         return user
-
+    
+    def send_welcome_email(self, user, password):
+        subject = 'Welcome to Our Platform'
+        message = f'Hi {user.name},\n\nThank you for registering at our platform. Here are your login details:\n\nEmail: {user.email}\nPassword: {password}\n\nPlease keep this information secure.'
+        email_from = settings.EMAIL_HOST_USER
+        recipient_list = [user.email]
+        send_mail(subject, message, email_from, recipient_list)
+    def generate_password(self, length=12):
+        characters = string.ascii_letters + string.digits + string.punctuation
+        password = ''.join(secrets.choice(characters) for i in range(length))
+        return password   
 
 class UserAccount(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(max_length=255, unique=True)
     name = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_teacher = models.BooleanField(default=False)  # New field to indicate teacher status
+    is_teacher = models.BooleanField(default=False) # New field to indicate teacher status
     is_student = models.BooleanField(default=False)
-    is_center=models.BooleanField(default=False)
+    is_center = models.BooleanField(default=False)
     
-
     objects = UserAccountManager()
 
     USERNAME_FIELD = 'email'
@@ -42,10 +64,10 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.name
-    
 
     def __str__(self):
         return self.email
+
 
 class Center(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE, related_name='center_profile', null=True, blank=True)
