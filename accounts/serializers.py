@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
 import secrets
 import string
+from django.utils import timezone
 User = get_user_model()
 
 
@@ -103,6 +104,9 @@ class DateSlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = DateSlot
         fields = '__all__'
+     
+    def get_status(self, obj):
+        return "available" if obj.available else "unavailable" 
 class TeacherSerializer(serializers.ModelSerializer):
     user =CustomUserCreateSerializer()
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
@@ -132,12 +136,26 @@ class TeacherSerializer(serializers.ModelSerializer):
         user.save()
 
         return instance
+    
+
+
 class DateSlotSerializer(serializers.ModelSerializer):
-    status = serializers.SerializerMethodField()
+    teacher = serializers.StringRelatedField()
 
     class Meta:
         model = DateSlot
-        fields = '__all__'
+        fields = ['id', 'teacher', 'time', 'available', 'status']
+
+    status = serializers.CharField(source='get_status', read_only=True)
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['status'] = "available" if instance.available else "unavailable"
+        return representation
+
+
+
+
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
