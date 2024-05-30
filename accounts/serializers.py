@@ -78,10 +78,16 @@ class StudentSerializer(serializers.ModelSerializer):
         return instance    
 
 
+class DateSlotSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DateSlot
+        fields = '__all__'
 class TeacherSerializer(serializers.ModelSerializer):
     user =CustomUserCreateSerializer()
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
-
+    time_slots = DateSlotSerializer(many=True, read_only=True)
     class Meta:
         model = Teacher
         fields = ['id', 'user', 'bio', 'role', 'center']
@@ -112,11 +118,7 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DateSlot
-        fields = ['id', 'teacher', 'start_time', 'end_time', 'status']
-        depth = 1  # To include related objects
-
-    def get_status(self, obj):
-        return 'unavailable' if Booking.objects.filter(date_slot=obj).exists() else 'available'
+        fields = '__all__'
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:

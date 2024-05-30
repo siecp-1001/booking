@@ -1,7 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db.models.signals import post_save
-from django.dispatch import receiver   
+from django.dispatch import receiver 
+import datetime  
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
@@ -87,11 +88,12 @@ class Course(models.Model):
 
 class DateSlot(models.Model):
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='available_slots')
-    start_time = models.DateTimeField()
-    end_time = models.DateTimeField()
+    time = models.TimeField(default=datetime.time(9, 0))
+    available = models.BooleanField(default=True)
 
+    
     def __str__(self):
-        return f"{self.teacher.user.name} - {self.start_time} to {self.end_time}"
+        return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
 
 class Booking(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='bookings')
