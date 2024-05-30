@@ -1,7 +1,7 @@
 from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher
+from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
@@ -155,6 +155,26 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
 
 
+class AppointmentSerializer(serializers.ModelSerializer):
+    user = CustomUserCreateSerializer()
+    center = CenterSerializer()
+    time_slot = DateSlotSerializer()
+
+    class Meta:
+        model = Appointment
+        fields = ['id', 'user', 'center', 'date', 'time_slot', 'duration']
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        center_data = validated_data.pop('center')
+        time_slot_data = validated_data.pop('time_slot')
+
+        user = User.objects.create(**user_data)
+        center = Center.objects.create(**center_data)
+        time_slot = DateSlot.objects.create(**time_slot_data)
+
+        appointment = Appointment.objects.create(user=user, center=center, time_slot=time_slot, **validated_data)
+        return appointment
 
 
 class BookingSerializer(serializers.ModelSerializer):

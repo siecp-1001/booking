@@ -117,6 +117,17 @@ class DateSlot(models.Model):
     def __str__(self):
         return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
 
+
+
+class Appointment(models.Model):
+    user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
+    center = models.ForeignKey(Center, on_delete=models.CASCADE)
+    date = models.DateField()
+    time_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE)
+    duration = models.DurationField()
+
+    def __str__(self):
+        return f"{self.user} - {self.center} - {self.date} {self.time_slot}"
 class Booking(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='bookings')
     date_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE, related_name='bookings')
