@@ -113,7 +113,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     time_slots = DateSlotSerializer(many=True, read_only=True)
     class Meta:
         model = Teacher
-        fields = ['id', 'user', 'bio', 'role', 'center']
+        fields = ['id', 'user', 'bio', 'role', 'center','time_slots']
 
 
     def create(self, validated_data):
