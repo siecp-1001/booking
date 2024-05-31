@@ -1,7 +1,7 @@
 from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment
+from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment,Lesson
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
@@ -155,26 +155,47 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
 
 
+class LessonSerializer(serializers.ModelSerializer):
+    times = serializers.PrimaryKeyRelatedField(many=True, queryset=DateSlot.objects.all())
+    class Meta:
+        model = Lesson
+        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject']
+def create(self, validated_data):
+    times_data = validated_data.pop('times')
+    lesson = Lesson.objects.create(**validated_data)
+    for time_data in times_data:
+        DateSlot.objects.create(lesson=lesson, **time_data)
+    return lesson
+
+
 class AppointmentSerializer(serializers.ModelSerializer):
-    user = CustomUserCreateSerializer()
-    center = CenterSerializer()
-    time_slot = DateSlotSerializer()
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
+    time_slot = serializers.PrimaryKeyRelatedField(queryset=DateSlot.objects.all())
 
     class Meta:
         model = Appointment
         fields = ['id', 'user', 'center', 'date', 'time_slot', 'duration']
 
     def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        center_data = validated_data.pop('center')
-        time_slot_data = validated_data.pop('time_slot')
-
-        user = User.objects.create(**user_data)
-        center = Center.objects.create(**center_data)
-        time_slot = DateSlot.objects.create(**time_slot_data)
-
-        appointment = Appointment.objects.create(user=user, center=center, time_slot=time_slot, **validated_data)
+        user = validated_data.pop('user')
+        center = validated_data.pop('center')
+        time_slot = validated_data.pop('time_slot')
+        
+        appointment = Appointment.objects.create(
+            user=user,
+            center=center,
+            time_slot=time_slot,
+            **validated_data
+        )
         return appointment
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['user'] = CustomUserCreateSerializer(instance.user).data
+        representation['center'] = CenterSerializer(instance.center).data
+        representation['time_slot'] = DateSlotSerializer(instance.time_slot).data
+        return representation
 
 
 class BookingSerializer(serializers.ModelSerializer):

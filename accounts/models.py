@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver 
 import datetime  
 from django.core.mail import send_mail
@@ -118,7 +118,15 @@ class DateSlot(models.Model):
         return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
 
 
+class Lesson(models.Model):
+    day = models.CharField(max_length=50)
+    max_students = models.IntegerField()
+    times = models.ManyToManyField(DateSlot)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Course, on_delete=models.CASCADE)
 
+    def __str__(self):
+        return f"{self.subject.title} by {self.teacher} on {self.day}"
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
     center = models.ForeignKey(Center, on_delete=models.CASCADE)
@@ -171,3 +179,17 @@ def save_user_profile(sender, instance, **kwargs):
             instance.center_profile.save()
         except Center.DoesNotExist:
             Center.objects.create(user=instance)
+
+
+@receiver(post_save, sender=Appointment)
+def update_date_slot_availability(sender, instance, created, **kwargs):
+    if created:
+        # Mark the time slot as unavailable when an appointment is created
+        instance.time_slot.available = False
+        instance.time_slot.save()
+
+@receiver(pre_delete, sender=Appointment)
+def restore_date_slot_availability(sender, instance, **kwargs):
+    # Mark the time slot as available when an appointment is deleted
+    instance.time_slot.available = True
+    instance.time_slot.save()
