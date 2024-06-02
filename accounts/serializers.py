@@ -1,7 +1,7 @@
 from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment,Lesson
+from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment,Lesson,Course
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
@@ -134,22 +134,37 @@ class DateSlotSerializer(serializers.ModelSerializer):
      
     def get_status(self, obj):
         return "available" if obj.available else "unavailable" 
+    
+class CourseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Course
+        fields = ['id', 'title', 'description', 'created_at']
+
+
 class TeacherSerializer(serializers.ModelSerializer):
     user =CustomUserCreateSerializer()
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     time_slots = DateSlotSerializer(many=True, read_only=True)
+    courses = CourseSerializer(many=True, required=False)
     class Meta:
         model = Teacher
-        fields = ['id', 'user', 'lastname', 'phone', 'center','time_slots']
+        fields = ['id', 'user', 'lastname', 'phone', 'center','time_slots', 'courses']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
-        user = User.objects.create(**user_data)
+        courses_data = validated_data.pop('courses', [])
+        user = User.objects.create(**user_data)  # Assuming UserAccount is the correct user model
         teacher = Teacher.objects.create(user=user, **validated_data)
+        
+        for course_data in courses_data:
+            course, created = Course.objects.get_or_create(**course_data)
+            teacher.courses.add(course)
+        
         return teacher
 
     def update(self, instance, validated_data):
-        user_data = validated_data.pop('user')
+        user_data = validated_data.pop('user', None)
+        courses_data = validated_data.pop('courses', None)
         user = instance.user
 
         instance.lastname = validated_data.get('lastname', instance.lastname)
@@ -157,9 +172,16 @@ class TeacherSerializer(serializers.ModelSerializer):
         instance.center = validated_data.get('center', instance.center)
         instance.save()
 
-        user.email = user_data.get('email', user.email)
-        user.name = user_data.get('name', user.name)
-        user.save()
+        if user_data:
+            user.email = user_data.get('email', user.email)
+            user.name = user_data.get('name', user.name)
+            user.save()
+
+        if courses_data is not None:
+            instance.courses.clear()
+            for course_data in courses_data:
+                course, created = Course.objects.get_or_create(**course_data)
+                instance.courses.add(course)
 
         return instance
     
