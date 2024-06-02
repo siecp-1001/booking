@@ -166,6 +166,18 @@ def create(self, validated_data):
     for time_data in times_data:
         DateSlot.objects.create(lesson=lesson, **time_data)
     return lesson
+def update(self, instance, validated_data):
+        times_data = validated_data.pop('times', None)
+        instance.day = validated_data.get('day', instance.day)
+        instance.max_students = validated_data.get('max_students', instance.max_students)
+        instance.teacher.set(validated_data.get('teacher', instance.teacher))
+        instance.subject.set(validated_data.get('subject', instance.subject))
+        
+        if times_data is not None:
+            instance.times.set(times_data)  # Update the ManyToMany relationship
+
+        instance.save()
+        return instance
 
 
 class AppointmentSerializer(serializers.ModelSerializer):

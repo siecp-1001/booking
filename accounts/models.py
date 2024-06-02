@@ -10,6 +10,7 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 import secrets
 import string
+from datetime import date, timedelta
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
@@ -122,11 +123,22 @@ class Lesson(models.Model):
     day = models.CharField(max_length=50)
     max_students = models.IntegerField()
     times = models.ManyToManyField(DateSlot)
-    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE)
-    subject = models.ForeignKey(Course, on_delete=models.CASCADE)
+    teacher = models.ManyToManyField(Teacher)
+    subject = models.ManyToManyField(Course)
+    end_date = models.DateField(default=date.today() + timedelta(days=30))
+
+    def days_until_end(self):
+        delta = self.end_date - date.today()
+        return delta.days
 
     def __str__(self):
-        return f"{self.subject.title} by {self.teacher} on {self.day}"
+        subjects = ', '.join([str(subject) for subject in self.subject.all()])
+        teachers = ', '.join([str(teacher) for teacher in self.teacher.all()])
+        days_remaining = self.days_until_end()
+        return f"{subjects} by {teachers} on {self.day} ({days_remaining} days remaining)"
+    
+
+    
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
     center = models.ForeignKey(Center, on_delete=models.CASCADE)
