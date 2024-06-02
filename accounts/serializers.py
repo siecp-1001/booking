@@ -8,6 +8,11 @@ from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerialize
 import secrets
 import string
 from django.utils import timezone
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.conf import settings
+from django.utils.crypto import get_random_string
 User = get_user_model()
 
 
@@ -75,12 +80,34 @@ class StudentSerializer(serializers.ModelSerializer):
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     class Meta:
         model = Student
-        fields = ['id', 'user', 'center']
-       
+        fields = ['id', 'user','lastname','phone', 'center']
+     
     def create(self, validated_data):
         user_data = validated_data.pop('user')
-        user = User.objects.create(**user_data)
+
+        # Generate a random password
+        random_password = get_random_string(length=8)
+        user_data['password'] = random_password
+
+        user = User.objects.create_user(**user_data)
         student = Student.objects.create(user=user, **validated_data)
+
+        # Send email to the student
+        subject = 'Welcome to Our School'
+        message = (
+            f"Dear {user.name},\n\n"
+            f"Welcome to our school. We are excited to have you at {student.center}.\n\n"
+            f"Your account has been created with the following details:\n"
+            f"Email: {user.email}\n"
+            f"Password: {random_password}\n\n"
+            "Please log in and change your password as soon as possible.\n\n"
+            "Best regards,\n"
+            "The School Team"
+        )
+        from_email = settings.EMAIL_HOST_USER  # Use your sender email
+        to_email = [user.email]
+        send_mail(subject, message, from_email, to_email)
+
         return student
 
     def update(self, instance, validated_data):
@@ -113,8 +140,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     time_slots = DateSlotSerializer(many=True, read_only=True)
     class Meta:
         model = Teacher
-        fields = ['id', 'user', 'bio', 'role', 'center','time_slots']
-
+        fields = ['id', 'user', 'lastname', 'phone', 'center','time_slots']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -126,8 +152,8 @@ class TeacherSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop('user')
         user = instance.user
 
-        instance.bio = validated_data.get('bio', instance.bio)
-        instance.role = validated_data.get('role', instance.role)
+        instance.lastname = validated_data.get('lastname', instance.lastname)
+        instance.phone = validated_data.get('phone', instance.phone)
         instance.center = validated_data.get('center', instance.center)
         instance.save()
 

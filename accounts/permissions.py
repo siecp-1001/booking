@@ -24,17 +24,29 @@ class IsStudentOrReadOnly(BasePermission):
         return obj.student.user == request.user
 
 
-
 class IsCenterUser(permissions.BasePermission):
-  
+    """
+    Custom permission to only allow staff users or users who belong to a specific center.
+    """
 
     def has_permission(self, request, view):
-        # Ensure the user is authenticated and is a center user
-        return request.user.is_authenticated and request.user.is_center
-
-    def has_object_permission(self, request, view, obj):
-        # Allow staff users to have full access
+        # Staff members have all permissions
         if request.user.is_staff:
             return True
-        # Check if the center user owns the object
-        return obj.center.user == request.user
+        
+        # Center users have permissions based on their center
+        if request.user.is_center:
+            return True
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        # Staff members can access all objects
+        if request.user.is_staff:
+            return True
+        
+        # Center users can access objects belonging to their center
+        if request.user.is_center and obj.center == request.user.center_profile:
+            return True
+
+        return False

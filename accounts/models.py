@@ -77,27 +77,29 @@ class Center(models.Model):
 
     def __str__(self):
         return self.user.name
-class Teacher(models.Model):
-    ROLE_CHOICES = (
-        ('lead', 'Lead Teacher'),
-        ('assistant', 'Assistant Teacher'),
-        ('substitute', 'Substitute Teacher'),
-    )
-    user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
-    bio = models.TextField(blank=True, null=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='assistant')
-    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True) 
-
-    def __str__(self):
-        return f"{self.user.name} - {self.get_role_display()}"
-
 
     
 class Student(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
+    lastname = models.CharField(max_length=255, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='students', default=1)  # Temporary default
     def __str__(self):
         return self.user.name if self.user else 'No User'
+
+    
+class Teacher(models.Model):
+  
+    user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
+    
+    lastname = models.CharField(max_length=255, default='', null=False)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+   
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True) 
+
+    def __str__(self):
+        return f"{self.user.name} "
+
 
     
 class Course(models.Model):

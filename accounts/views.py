@@ -105,25 +105,73 @@ class LessonViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
     
 
-    
-class TeacherViewSet(viewsets.ModelViewSet):
-    queryset = Teacher.objects.all()
-    serializer_class = TeacherSerializer
-    permission_classes = [IsCenterUser]
+ 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsCenterUser])
+def teacher_list(request):
+    if request.user.is_staff:
+        teachers = Teacher.objects.all()
+    elif request.user.is_center:
+        teachers = Teacher.objects.filter(center__user=request.user)
+    else:
+        teachers = Teacher.objects.none()
 
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_staff:
-            return Teacher.objects.all()
-        if user.is_center:
-            return Teacher.objects.filter(center__user=user)
-        return Teacher.objects.none()
+    serializer = TeacherSerializer(teachers, many=True)
+    return Response(serializer.data)
 
-    def perform_create(self, serializer):
-        serializer.save(center=self.request.user.center_profile)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsCenterUser])
+def teacher_detail(request, pk):
+    try:
+        teacher = Teacher.objects.get(pk=pk)
+    except Teacher.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
-    def perform_update(self, serializer):
-        serializer.save(center=self.request.user.center_profile)
+    if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    serializer = TeacherSerializer(teacher)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsCenterUser])
+def teacher_create(request):
+    serializer = TeacherSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(center=request.user.center_profile)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated, IsCenterUser])
+def teacher_update(request, pk):
+    try:
+        teacher = Teacher.objects.get(pk=pk)
+    except Teacher.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    serializer = TeacherSerializer(teacher, data=request.data, partial=('PATCH' in request.method))
+    if serializer.is_valid():
+        serializer.save(center=request.user.center_profile)
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, IsCenterUser])
+def teacher_delete(request, pk):
+    try:
+        teacher = Teacher.objects.get(pk=pk)
+    except Teacher.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    teacher.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 # Function-based views
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
