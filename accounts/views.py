@@ -102,7 +102,7 @@ class LessonViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
     
 
  
@@ -138,7 +138,7 @@ def teacher_detail(request, pk):
 def teacher_create(request):
     serializer = TeacherSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save(center=request.user.center_profile)
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -140,26 +140,26 @@ class CourseSerializer(serializers.ModelSerializer):
         model = Course
         fields = ['id', 'title', 'description', 'created_at']
 
-
 class TeacherSerializer(serializers.ModelSerializer):
-    user =CustomUserCreateSerializer()
+    user = CustomUserCreateSerializer()
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     time_slots = DateSlotSerializer(many=True, read_only=True)
     courses = CourseSerializer(many=True, required=False)
+
     class Meta:
         model = Teacher
-        fields = ['id', 'user', 'lastname', 'phone', 'center','time_slots', 'courses']
+        fields = ['id', 'user', 'lastname', 'phone', 'center', 'time_slots', 'courses']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         courses_data = validated_data.pop('courses', [])
-        user = User.objects.create(**user_data)  # Assuming UserAccount is the correct user model
+        user = User.objects.create(**user_data)
         teacher = Teacher.objects.create(user=user, **validated_data)
-        
+
         for course_data in courses_data:
             course, created = Course.objects.get_or_create(**course_data)
             teacher.courses.add(course)
-        
+
         return teacher
 
     def update(self, instance, validated_data):
@@ -186,20 +186,47 @@ class TeacherSerializer(serializers.ModelSerializer):
         return instance
     
 
+from rest_framework import serializers
 
 class DateSlotSerializer(serializers.ModelSerializer):
-    teacher = serializers.StringRelatedField()
+    time = serializers.CharField(required=True)  # Ensure this field is required
+    teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.all(), required=True)  # Ensure this field is required
 
     class Meta:
         model = DateSlot
-        fields = ['id', 'teacher', 'time', 'available', 'status']
+        fields = '__all__'
 
-    status = serializers.CharField(source='get_status', read_only=True)
+    def validate_status(self, value):
+        if value.lower() not in ["true", "false"]:
+            raise serializers.ValidationError("Status must be 'true' or 'false'.")
+        return value
+
+    def create(self, validated_data):
+        status = validated_data.pop('status', None)
+        
+        if status is not None:
+            validated_data['available'] = (status.lower() == "true")
+        
+        date_slot = DateSlot.objects.create(**validated_data)
+        return date_slot
+
+    def update(self, instance, validated_data):
+        status = validated_data.pop('status', None)
+        
+        if status is not None:
+            instance.available = (status.lower() == "true")
+        
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
 
     def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['status'] = "available" if instance.available else "unavailable"
-        return representation
+        ret = super().to_representation(instance)
+        ret['status'] = "true" if instance.available else "false"
+        return ret
+
 
 
 
