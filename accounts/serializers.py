@@ -133,7 +133,7 @@ class DateSlotSerializer(serializers.ModelSerializer):
         fields = '__all__'
      
     def get_status(self, obj):
-        return "available" if obj.available else "unavailable" 
+        return "true" if obj.available else "false" 
     
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:

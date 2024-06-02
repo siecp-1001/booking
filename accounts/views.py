@@ -158,20 +158,20 @@ def teacher_update(request, pk):
         serializer.save(center=request.user.center_profile)
         return Response(serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, IsCenterUser])
 def teacher_delete(request, pk):
     try:
         teacher = Teacher.objects.get(pk=pk)
     except Teacher.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response({'detail': 'Teacher not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
-        return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
     teacher.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
+    return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
+
 # Function-based views
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
