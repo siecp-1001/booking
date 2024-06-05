@@ -1,7 +1,7 @@
 from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment,Lesson,Course
+from .models import DateSlot, Booking, Enrollment,Center, Student,Teacher,Appointment,Lesson,Course
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
@@ -80,7 +80,7 @@ class StudentSerializer(serializers.ModelSerializer):
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     class Meta:
         model = Student
-        fields = ['id', 'user','lastname','phone', 'center']
+        fields = ['id', 'user','lastname','phone', 'center','created_at']
      
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -133,7 +133,12 @@ class DateSlotSerializer(serializers.ModelSerializer):
         fields = '__all__'
      
     def get_status(self, obj):
-        return "true" if obj.available else "false" 
+        return "true" if obj.available else "false"
+
+    def create(self, validated_data):
+        # Remove the 'teacher' field from validated data if present
+        validated_data.pop('teacher', None)
+        return super().create(validated_data) 
     
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -148,7 +153,7 @@ class TeacherSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Teacher
-        fields = ['id', 'user', 'lastname', 'phone', 'center', 'time_slots', 'courses']
+        fields = ['id', 'user', 'lastname', 'phone', 'center', 'time_slots', 'courses','created_at']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -234,7 +239,7 @@ class LessonSerializer(serializers.ModelSerializer):
     times = serializers.PrimaryKeyRelatedField(many=True, queryset=DateSlot.objects.all())
     class Meta:
         model = Lesson
-        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject']
+        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'end_date']
 def create(self, validated_data):
     times_data = validated_data.pop('times')
     lesson = Lesson.objects.create(**validated_data)
@@ -247,7 +252,7 @@ def update(self, instance, validated_data):
         instance.max_students = validated_data.get('max_students', instance.max_students)
         instance.teacher.set(validated_data.get('teacher', instance.teacher))
         instance.subject.set(validated_data.get('subject', instance.subject))
-        
+        instance.end_date = validated_data.get('end_date', instance.end_date)
         if times_data is not None:
             instance.times.set(times_data)  # Update the ManyToMany relationship
 
@@ -255,36 +260,74 @@ def update(self, instance, validated_data):
         return instance
 
 
+
 class AppointmentSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     time_slot = serializers.PrimaryKeyRelatedField(queryset=DateSlot.objects.all())
+    lesson = LessonSerializer(read_only=True)
 
     class Meta:
         model = Appointment
-        fields = ['id', 'user', 'center', 'date', 'time_slot', 'duration']
+        fields = ['id', 'user', 'center', 'lesson', 'time_slot', 'duration']
 
     def create(self, validated_data):
         user = validated_data.pop('user')
         center = validated_data.pop('center')
         time_slot = validated_data.pop('time_slot')
         
+        # Ensure the DateSlot is available
+        if not time_slot.available:
+            raise serializers.ValidationError("The selected time slot is not available.")
+
+        # Create the appointment
         appointment = Appointment.objects.create(
             user=user,
             center=center,
             time_slot=time_slot,
             **validated_data
         )
+        
+        # Mark the time slot as unavailable
+        time_slot.available = False
+        time_slot.save()
+
         return appointment
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        if instance.lesson:
+            representation['lesson'] = LessonSerializer(instance.lesson).data
+            # Add days remaining in the lesson
+            representation['days_until_end'] = instance.lesson.days_until_end()
+        else:
+            representation['lesson'] = "No lesson"
+            representation['days_until_end'] = None
+        
         representation['user'] = CustomUserCreateSerializer(instance.user).data
         representation['center'] = CenterSerializer(instance.center).data
         representation['time_slot'] = DateSlotSerializer(instance.time_slot).data
+        
         return representation
 
+    def save(self, **kwargs):
+        # When saving an appointment, also create the corresponding DateSlot if it doesn't exist
+        if 'time_slot' in self.validated_data:
+            time_slot_data = self.validated_data['time_slot']
+            if isinstance(time_slot_data, dict) and 'teacher' in time_slot_data:
+                teacher = time_slot_data['teacher']
+                time = time_slot_data.get('time')
+                if teacher and time:
+                    date_slot, created = DateSlot.objects.get_or_create(teacher=teacher, time=time)
+                    self.validated_data['time_slot'] = date_slot
+        return super().save(**kwargs)
 
+class SubjectSerializer(serializers.ModelSerializer):
+    teachers = TeacherSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Course
+        fields = '__all__'
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking

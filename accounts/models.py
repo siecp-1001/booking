@@ -84,6 +84,7 @@ class Student(models.Model):
     lastname = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='students', default=1)  # Temporary default
+    created_at = models.DateTimeField(auto_now_add=True)
     def __str__(self):
         return self.user.name if self.user else 'No User'
 
@@ -95,7 +96,8 @@ class Teacher(models.Model):
     lastname = models.CharField(max_length=255, default='', null=False)
     phone = models.CharField(max_length=20, blank=True, null=True)
    
-    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True) 
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True) 
 
     def __str__(self):
         return f"{self.user.name} "
@@ -122,7 +124,7 @@ class DateSlot(models.Model):
 
 
 class Lesson(models.Model):
-    day = models.CharField(max_length=50)
+    day=models.CharField(max_length=50)
     max_students = models.IntegerField()
     times = models.ManyToManyField(DateSlot)
     teacher = models.ManyToManyField(Teacher)
@@ -144,12 +146,17 @@ class Lesson(models.Model):
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
     center = models.ForeignKey(Center, on_delete=models.CASCADE)
-    date = models.DateField()
+    subject = models.ForeignKey(Course, on_delete=models.CASCADE, null=True)
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, null=True)
     time_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE)
     duration = models.DurationField()
 
     def __str__(self):
-        return f"{self.user} - {self.center} - {self.date} {self.time_slot}"
+        if self.lesson:
+            days_remaining = self.lesson.days_until_end()
+            return f"{self.user} - {self.center}- {self.subject} - {self.lesson.day} ({days_remaining} days remaining) - {self.time_slot}"
+        else:
+            return f"{self.user} - {self.center}- {self.subject} - No lesson - {self.time_slot}"
 class Booking(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='bookings')
     date_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE, related_name='bookings')

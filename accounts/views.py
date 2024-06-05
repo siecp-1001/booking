@@ -2,8 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer
+from .models import DateSlot, Booking, Course,Enrollment, Center, Student,Teacher,Appointment,Lesson
+from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
@@ -208,3 +208,29 @@ def user_dashboard(request):
         }
 
     return Response(data)
+
+
+
+
+class SubjectViewSet(viewsets.ModelViewSet):
+    queryset = Course.objects.all()
+    serializer_class = SubjectSerializer
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class AvailableDaysView(generics.GenericAPIView):
+    def get(self, request, subject_id):
+        # Query to filter appointments by subject_id and get distinct lesson days
+        appointments = Appointment.objects.filter(subject_id=subject_id).values_list('lesson__day', flat=True).distinct()
+        available_days = list(appointments)
+        return Response(available_days)
+class TeachersForSubjectView(generics.GenericAPIView):
+    def get(self, request, subject_id):
+        subject = Course.objects.get(id=subject_id)
+        teachers = subject.teachers.all()
+        serializer = TeacherSerializer(teachers, many=True)
+        return Response(serializer.data)

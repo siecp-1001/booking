@@ -46,7 +46,7 @@ class IsCenterUser(permissions.BasePermission):
             return True
         
         # Center users can access objects belonging to their center
-        if request.user.is_center and obj.center == request.user.center_profile:
+        if request.user.is_center and obj.center == request.user.center:
             return True
 
         return False
