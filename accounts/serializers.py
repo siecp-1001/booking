@@ -81,7 +81,7 @@ class StudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = ['id', 'user','lastname','phone', 'center','created_at']
-     
+
     def create(self, validated_data):
         user_data = validated_data.pop('user')
 
@@ -235,30 +235,49 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
 
 
+
+
 class LessonSerializer(serializers.ModelSerializer):
     times = serializers.PrimaryKeyRelatedField(many=True, queryset=DateSlot.objects.all())
+    teacher = serializers.PrimaryKeyRelatedField(many=True, queryset=Teacher.objects.all())
+    subject = serializers.PrimaryKeyRelatedField(many=True, queryset=Course.objects.all())
+
     class Meta:
         model = Lesson
-        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'end_date']
-def create(self, validated_data):
-    times_data = validated_data.pop('times')
-    lesson = Lesson.objects.create(**validated_data)
-    for time_data in times_data:
-        DateSlot.objects.create(lesson=lesson, **time_data)
-    return lesson
-def update(self, instance, validated_data):
+        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'created_at', 'duration_days']
+
+    def create(self, validated_data):
+        times_data = validated_data.pop('times')
+        teachers_data = validated_data.pop('teacher')
+        subjects_data = validated_data.pop('subject')
+        
+        lesson = Lesson.objects.create(**validated_data)
+        lesson.times.set(times_data)
+        lesson.teacher.set(teachers_data)
+        lesson.subject.set(subjects_data)
+        
+        return lesson
+
+    def update(self, instance, validated_data):
         times_data = validated_data.pop('times', None)
+        teachers_data = validated_data.pop('teacher', None)
+        subjects_data = validated_data.pop('subject', None)
+        
         instance.day = validated_data.get('day', instance.day)
         instance.max_students = validated_data.get('max_students', instance.max_students)
-        instance.teacher.set(validated_data.get('teacher', instance.teacher))
-        instance.subject.set(validated_data.get('subject', instance.subject))
-        instance.end_date = validated_data.get('end_date', instance.end_date)
+        instance.duration_days = validated_data.get('duration_days', instance.duration_days)
+        
         if times_data is not None:
-            instance.times.set(times_data)  # Update the ManyToMany relationship
-
+            instance.times.set(times_data)
+        
+        if teachers_data is not None:
+            instance.teacher.set(teachers_data)
+        
+        if subjects_data is not None:
+            instance.subject.set(subjects_data)
+        
         instance.save()
         return instance
-
 
 
 class AppointmentSerializer(serializers.ModelSerializer):

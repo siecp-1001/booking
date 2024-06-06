@@ -11,6 +11,7 @@ from django.db import models
 import secrets
 import string
 from datetime import date, timedelta
+from django.utils.timezone import now
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
@@ -124,16 +125,18 @@ class DateSlot(models.Model):
 
 
 class Lesson(models.Model):
-    day=models.CharField(max_length=50)
+    day = models.CharField(max_length=50)
     max_students = models.IntegerField()
     times = models.ManyToManyField(DateSlot)
     teacher = models.ManyToManyField(Teacher)
     subject = models.ManyToManyField(Course)
-    end_date = models.DateField(default=date.today() + timedelta(days=30))
+    created_at = models.DateField(auto_now_add=True)
+    duration_days = models.IntegerField(default=30)  # Duration in days from creation
 
     def days_until_end(self):
-        delta = self.end_date - date.today()
-        return delta.days
+        end_date = self.created_at + timedelta(days=self.duration_days)
+        delta = end_date - date.today()
+        return max(delta.days, 0)  # Ensure it doesn't return negative days
 
     def __str__(self):
         subjects = ', '.join([str(subject) for subject in self.subject.all()])
@@ -142,7 +145,6 @@ class Lesson(models.Model):
         return f"{subjects} by {teachers} on {self.day} ({days_remaining} days remaining)"
     
 
-    
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
     center = models.ForeignKey(Center, on_delete=models.CASCADE)
@@ -157,6 +159,16 @@ class Appointment(models.Model):
             return f"{self.user} - {self.center}- {self.subject} - {self.lesson.day} ({days_remaining} days remaining) - {self.time_slot}"
         else:
             return f"{self.user} - {self.center}- {self.subject} - No lesson - {self.time_slot}"
+
+    @staticmethod
+    def check_availability(time_slot, duration):
+        end_time = time_slot.time + duration
+        overlapping_appointments = Appointment.objects.filter(
+            time_slot__teacher=time_slot.teacher,
+            time_slot__time__lt=end_time,
+            time_slot__time__gte=time_slot.time
+        )
+        return not overlapping_appointments.exists()
 class Booking(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='bookings')
     date_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE, related_name='bookings')

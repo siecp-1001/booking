@@ -90,6 +90,12 @@ class UserCreateView(generics.CreateAPIView):
     serializer_class = CustomUserCreateSerializer
 
 
+class StudentCenterAPIView(generics.RetrieveAPIView):
+    serializer_class = CenterSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user.student.center
 class AppointmentViewSet(viewsets.ModelViewSet):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
@@ -200,6 +206,11 @@ def user_dashboard(request):
         data = {
             "message": f"Hello {user.name}, welcome to the admin dashboard",
             "dashboard_data": "Admin-specific data here"
+        }
+    elif user.is_center:
+        data = {
+            "message": f"Hello {user.name}, welcome to the center dashboard",
+            "dashboard_data": "centre-specific data here"
         }
     else:
         data = {
