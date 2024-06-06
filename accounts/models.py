@@ -86,6 +86,7 @@ class Student(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True)
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='students', default=1)  # Temporary default
     created_at = models.DateTimeField(auto_now_add=True)
+    delete_confirmed = models.BooleanField(default=False)
     def __str__(self):
         return self.user.name if self.user else 'No User'
 
@@ -124,6 +125,13 @@ class DateSlot(models.Model):
         return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
 
 
+class DeleteRequest(models.Model):
+    student = models.ForeignKey('Student', on_delete=models.CASCADE)
+    requested_by = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
+    confirmed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Delete request for {self.student.user.username} by {self.requested_by.username}"
 class Lesson(models.Model):
     day = models.CharField(max_length=50)
     max_students = models.IntegerField()

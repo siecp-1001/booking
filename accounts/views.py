@@ -2,9 +2,10 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Course,Enrollment, Center, Student,Teacher,Appointment,Lesson
+from .models import DateSlot, Booking, Course, DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
 from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
+from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from django.http import JsonResponse
@@ -48,12 +49,26 @@ class StudentViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         serializer.save(center=self.request.user.center_profile)
 
-    @action(detail=True, methods=['delete'], permission_classes=[IsAdminUser])
-    def confirm_delete(self, request, pk=None):
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def request_delete(self, request, pk=None):
         student = self.get_object()
-        student.delete()
-        return Response({'status': 'student deleted'})
+        delete_request, created = DeleteRequest.objects.get_or_create(student=student, requested_by=request.user)
+        if created:
+            delete_request_created.send(sender=self.__class__, delete_request=delete_request)
+            return Response({'status': 'Delete request created, waiting for admin confirmation.'})
+        return Response({'status': 'Delete request already exists, waiting for admin confirmation.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def confirm_delete(self, request, pk=None):
+        try:
+            delete_request = DeleteRequest.objects.get(student__id=pk, confirmed=False)
+            delete_request.confirmed = True
+            delete_request.save()
+            student = delete_request.student
+            student.delete()
+            return Response({'status': 'Student deleted successfully.'})
+        except DeleteRequest.DoesNotExist:
+            return Response({'detail': 'No pending delete request for this student.'}, status=status.HTTP_400_BAD_REQUEST)
 class DateSlotViewSet(viewsets.ModelViewSet):
     queryset = DateSlot.objects.all()
     serializer_class = DateSlotSerializer
@@ -209,8 +224,9 @@ def user_dashboard(request):
         }
     elif user.is_center:
         data = {
-            "message": f"Hello {user.name}, welcome to the center dashboard",
-            "dashboard_data": "centre-specific data here"
+            "message": f"Hello {user.name}, welcome toid  {user.id} the center dashboard",
+            "dashboard_data": "centre-specific data here",
+            "center_id": user.center_profile.id 
         }
     else:
         data = {

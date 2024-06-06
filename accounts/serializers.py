@@ -147,14 +147,15 @@ class CourseSerializer(serializers.ModelSerializer):
 
 class TeacherSerializer(serializers.ModelSerializer):
     user = CustomUserCreateSerializer()
+    center_id = serializers.IntegerField(source='center.id', read_only=True)  # Add this line
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     time_slots = DateSlotSerializer(many=True, read_only=True)
     courses = CourseSerializer(many=True, required=False)
 
     class Meta:
+       
         model = Teacher
-        fields = ['id', 'user', 'lastname', 'phone', 'center', 'time_slots', 'courses','created_at']
-
+        fields = ['id', 'user', 'lastname', 'phone', 'center', 'center_id', 'time_slots', 'courses', 'created_at']
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         courses_data = validated_data.pop('courses', [])
@@ -283,17 +284,20 @@ class LessonSerializer(serializers.ModelSerializer):
 class AppointmentSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
+    subject = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all(), allow_null=True)
     time_slot = serializers.PrimaryKeyRelatedField(queryset=DateSlot.objects.all())
     lesson = LessonSerializer(read_only=True)
 
     class Meta:
         model = Appointment
-        fields = ['id', 'user', 'center', 'lesson', 'time_slot', 'duration']
+        fields = ['id', 'user', 'center','subject', 'lesson', 'time_slot', 'duration']
 
     def create(self, validated_data):
         user = validated_data.pop('user')
         center = validated_data.pop('center')
+        subject = validated_data.get('subject')
         time_slot = validated_data.pop('time_slot')
+        duration = validated_data.get('duration')
         
         # Ensure the DateSlot is available
         if not time_slot.available:
@@ -303,8 +307,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
         appointment = Appointment.objects.create(
             user=user,
             center=center,
+            subject=subject,
             time_slot=time_slot,
-            **validated_data
+            duration=duration
         )
         
         # Mark the time slot as unavailable
