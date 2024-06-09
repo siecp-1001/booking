@@ -132,6 +132,13 @@ class DeleteRequest(models.Model):
 
     def __str__(self):
         return f"Delete request for {self.student.user.username} by {self.requested_by.username}"
+
+class Duration(models.Model):
+    length = models.DurationField()  # Duration as a time period
+
+    def __str__(self):
+        return str(self.length)
+     
 class Lesson(models.Model):
     day = models.CharField(max_length=50)
     max_students = models.IntegerField()
@@ -140,7 +147,7 @@ class Lesson(models.Model):
     subject = models.ManyToManyField(Course)
     created_at = models.DateField(auto_now_add=True)
     duration_days = models.IntegerField(default=30)  # Duration in days from creation
-
+    duration = models.ForeignKey(Duration, on_delete=models.CASCADE, null=True, blank=True) 
     def days_until_end(self):
         end_date = self.created_at + timedelta(days=self.duration_days)
         delta = end_date - date.today()

@@ -2,8 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Course, DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, BookingSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
+from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
+from .serializers import DateSlotSerializer, BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -73,6 +73,16 @@ class DateSlotViewSet(viewsets.ModelViewSet):
     queryset = DateSlot.objects.all()
     serializer_class = DateSlotSerializer
     permission_classes = [IsAuthenticated]
+
+class DurationListCreateAPIView(viewsets.ModelViewSet):
+    queryset = Duration.objects.all()
+    serializer_class = DurationSerializer
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
+
+
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
