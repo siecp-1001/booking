@@ -234,7 +234,7 @@ def user_dashboard(request):
         }
     elif user.is_center:
         data = {
-            "message": f"Hello {user.name}, welcome toid  {user.id} the center dashboard",
+            "name":  {user.name} ,
             "dashboard_data": "centre-specific data here",
             "center_id": user.center_profile.id 
         }
