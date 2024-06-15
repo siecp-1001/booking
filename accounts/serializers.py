@@ -239,50 +239,59 @@ class DurationSerializer(serializers.ModelSerializer):
         model = Duration
         fields = ['id', 'length']
 
-
-
 class LessonSerializer(serializers.ModelSerializer):
-    times = serializers.PrimaryKeyRelatedField(many=True, queryset=DateSlot.objects.all())
-    teacher = serializers.PrimaryKeyRelatedField(many=True, queryset=Teacher.objects.all())
-    subject = serializers.PrimaryKeyRelatedField(many=True, queryset=Course.objects.all())
+    times = DateSlotSerializer(many=True, read_only=True)
+    teacher = TeacherSerializer(many=True, read_only=True)
+    subject = CourseSerializer(many=True, read_only=True)
 
     class Meta:
         model = Lesson
         fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'created_at', 'duration_days']
-
+    
     def create(self, validated_data):
-        times_data = validated_data.pop('times')
-        teachers_data = validated_data.pop('teacher')
-        subjects_data = validated_data.pop('subject')
+        times_data = self.initial_data.get('times', [])
+        teachers_data = self.initial_data.get('teacher', [])
+        subjects_data = self.initial_data.get('subject', [])
         
         lesson = Lesson.objects.create(**validated_data)
-        lesson.times.set(times_data)
-        lesson.teacher.set(teachers_data)
-        lesson.subject.set(subjects_data)
+        
+        if isinstance(times_data, list) and all(isinstance(item, int) for item in times_data):
+            times = DateSlot.objects.filter(id__in=times_data)
+            lesson.times.set(times)
+        
+        if isinstance(teachers_data, list) and all(isinstance(item, int) for item in teachers_data):
+            teachers = Teacher.objects.filter(id__in=teachers_data)
+            lesson.teacher.set(teachers)
+        
+        if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
+            subjects = Course.objects.filter(id__in=subjects_data)
+            lesson.subject.set(subjects)
         
         return lesson
 
     def update(self, instance, validated_data):
-        times_data = validated_data.pop('times', None)
-        teachers_data = validated_data.pop('teacher', None)
-        subjects_data = validated_data.pop('subject', None)
+        times_data = self.initial_data.get('times', [])
+        teachers_data = self.initial_data.get('teacher', [])
+        subjects_data = self.initial_data.get('subject', [])
         
         instance.day = validated_data.get('day', instance.day)
         instance.max_students = validated_data.get('max_students', instance.max_students)
         instance.duration_days = validated_data.get('duration_days', instance.duration_days)
         
-        if times_data is not None:
-            instance.times.set(times_data)
+        if isinstance(times_data, list) and all(isinstance(item, int) for item in times_data):
+            times = DateSlot.objects.filter(id__in=times_data)
+            instance.times.set(times)
         
-        if teachers_data is not None:
-            instance.teacher.set(teachers_data)
+        if isinstance(teachers_data, list) and all(isinstance(item, int) for item in teachers_data):
+            teachers = Teacher.objects.filter(id__in=teachers_data)
+            instance.teacher.set(teachers)
         
-        if subjects_data is not None:
-            instance.subject.set(subjects_data)
+        if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
+            subjects = Course.objects.filter(id__in=subjects_data)
+            instance.subject.set(subjects)
         
         instance.save()
         return instance
-
 
 class AppointmentSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
