@@ -264,7 +264,7 @@ class LessonSerializer(serializers.ModelSerializer):
             lesson.teacher.set(teachers)
         
         if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
-            subjects = Course.objects.filter(id__in=subjects_data)
+            subjects = Course.objects.filter(id__in=teachers_data)
             lesson.subject.set(subjects)
         
         return lesson

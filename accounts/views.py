@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
@@ -265,9 +266,10 @@ class AvailableDaysView(generics.GenericAPIView):
         appointments = Appointment.objects.filter(subject_id=subject_id).values_list('lesson__day', flat=True).distinct()
         available_days = list(appointments)
         return Response(available_days)
+
 class TeachersForSubjectView(generics.GenericAPIView):
     def get(self, request, subject_id):
-        subject = Course.objects.get(id=subject_id)
-        teachers = subject.teachers.all()
+        subject = get_object_or_404(Course, id=subject_id)
+        teachers = subject.teachers.all()  # Corrected from subject.courses.all() to subject.teachers.all()
         serializer = TeacherSerializer(teachers, many=True)
         return Response(serializer.data)

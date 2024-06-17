@@ -10,6 +10,7 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 import secrets
 import string
+from django.db.models.signals import m2m_changed
 from datetime import date, timedelta
 from django.utils.timezone import now
 class UserAccountManager(BaseUserManager):
@@ -152,13 +153,23 @@ class Lesson(models.Model):
         end_date = self.created_at + timedelta(days=self.duration_days)
         delta = end_date - date.today()
         return max(delta.days, 0)  # Ensure it doesn't return negative days
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)  # Save the lesson first
+        for course in self.subject.all():
+            course.teachers.add(*self.teacher.all())  # Add all teachers of this lesson to the course
+            course.save()  # Save the course
+
+        for teacher in self.teacher.all():
+            teacher.courses.add(*self.subject.all())  # Add all subjects of this lesson to the teacher
+            teacher.save() 
+    
 
     def __str__(self):
         subjects = ', '.join([str(subject) for subject in self.subject.all()])
         teachers = ', '.join([str(teacher) for teacher in self.teacher.all()])
         days_remaining = self.days_until_end()
         return f"{subjects} by {teachers} on {self.day} ({days_remaining} days remaining)"
-    
+
 
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
@@ -241,3 +252,11 @@ def restore_date_slot_availability(sender, instance, **kwargs):
     # Mark the time slot as available when an appointment is deleted
     instance.time_slot.available = True
     instance.time_slot.save()
+
+
+
+
+@receiver(m2m_changed, sender=Lesson.subject.through)
+def update_courses_and_teachers(sender, instance, action, reverse, model, pk_set, **kwargs):
+    if action in ["post_add", "post_remove"]:
+        instance.save()    
