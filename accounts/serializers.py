@@ -192,6 +192,12 @@ class TeacherSerializer(serializers.ModelSerializer):
         return instance
     
 
+class TeacherNameSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
+
+    class Meta:
+        model = Teacher
+        fields = ('name',)
 from rest_framework import serializers
 
 class DateSlotSerializer(serializers.ModelSerializer):

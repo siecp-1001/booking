@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
+from .serializers import DateSlotSerializer, BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -270,6 +270,6 @@ class AvailableDaysView(generics.GenericAPIView):
 class TeachersForSubjectView(generics.GenericAPIView):
     def get(self, request, subject_id):
         subject = get_object_or_404(Course, id=subject_id)
-        teachers = subject.teachers.all()  # Corrected from subject.courses.all() to subject.teachers.all()
-        serializer = TeacherSerializer(teachers, many=True)
+        teachers = subject.teachers.all()
+        serializer = TeacherNameSerializer(teachers, many=True)
         return Response(serializer.data)
