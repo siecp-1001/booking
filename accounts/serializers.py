@@ -194,10 +194,11 @@ class TeacherSerializer(serializers.ModelSerializer):
 
 class TeacherNameSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
+    
 
     class Meta:
         model = Teacher
-        fields = ('name',)
+        fields = ('name','id')
 from rest_framework import serializers
 
 class DateSlotSerializer(serializers.ModelSerializer):
@@ -252,7 +253,7 @@ class LessonSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Lesson
-        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'created_at', 'duration_days']
+        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'created_at', 'duration_days','duration']
     
     def create(self, validated_data):
         times_data = self.initial_data.get('times', [])
@@ -270,7 +271,7 @@ class LessonSerializer(serializers.ModelSerializer):
             lesson.teacher.set(teachers)
         
         if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
-            subjects = Course.objects.filter(id__in=teachers_data)
+            subjects = Course.objects.filter(id__in=subjects_data)
             lesson.subject.set(subjects)
         
         return lesson
