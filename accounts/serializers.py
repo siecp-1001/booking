@@ -396,3 +396,16 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         student = request.user.student
         validated_data['student'] = student
         return super().create(validated_data)
+    
+
+
+
+
+class LessonDurationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Lesson
+        fields = ['duration_days', 'created_at']
+
+
+
+        

@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer
+from .serializers import DateSlotSerializer, BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -273,3 +273,27 @@ class TeachersForSubjectView(generics.GenericAPIView):
         teachers = subject.teachers.all()
         serializer = TeacherNameSerializer(teachers, many=True)
         return Response(serializer.data)
+
+
+class LessonsForSubjectView(generics.GenericAPIView):
+    serializer_class = LessonDurationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, subject_id):
+        user = request.user
+        try:
+            student = Student.objects.get(user=user)
+        except Student.DoesNotExist:
+            return Response({"detail": "Student profile not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not student.center:
+            return Response({"detail": "Student's center not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            course = Course.objects.get(id=subject_id)
+        except Course.DoesNotExist:
+            return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        lessons = Lesson.objects.filter(subject=course, teacher__center=student.center).distinct()
+        serializer = self.get_serializer(lessons, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
