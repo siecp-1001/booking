@@ -114,7 +114,8 @@ class StudentSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop('user')
         user = instance.user
 
-      
+        instance.lastname = validated_data.get('lastname', instance.lastname)
+        instance.phone = validated_data.get('phone', instance.phone)
         instance.center = validated_data.get('center', instance.center)
         instance.save()
 
@@ -253,7 +254,7 @@ class LessonSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Lesson
-        fields = ['id', 'day', 'max_students', 'times', 'teacher', 'subject', 'created_at', 'duration_days','duration']
+        fields = ['id', 'day', 'max_students','startdate','end_date', 'times', 'teacher', 'subject', 'created_at', 'duration_days','duration']
     
     def create(self, validated_data):
         times_data = self.initial_data.get('times', [])
@@ -408,4 +409,10 @@ class LessonDurationSerializer(serializers.ModelSerializer):
 
 
 
-        
+
+class LessonTimesSerializer(serializers.ModelSerializer):
+    times = DateSlotSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Lesson
+        fields = ['times']        

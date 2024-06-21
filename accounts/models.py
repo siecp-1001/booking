@@ -143,6 +143,8 @@ class Duration(models.Model):
 class Lesson(models.Model):
     day = models.CharField(max_length=50)
     max_students = models.IntegerField()
+    startdate = models.DateTimeField() 
+    end_date = models.DateField(default=date.today)  
     times = models.ManyToManyField(DateSlot)
     teacher = models.ManyToManyField(Teacher)
     subject = models.ManyToManyField(Course)
