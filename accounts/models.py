@@ -13,6 +13,7 @@ import string
 from django.db.models.signals import m2m_changed
 from datetime import date, timedelta
 from django.utils.timezone import now
+
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
         if not email:
@@ -141,7 +142,7 @@ class Duration(models.Model):
         return str(self.length)
      
 class Lesson(models.Model):
-    day = models.CharField(max_length=50)
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='lessons', null=True, blank=True)
     max_students = models.IntegerField()
     startdate = models.DateTimeField() 
     end_date = models.DateField(default=date.today)  
