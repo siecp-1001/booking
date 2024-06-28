@@ -248,18 +248,21 @@ class DurationSerializer(serializers.ModelSerializer):
         model = Duration
         fields = ['id', 'length']
 
-
 class LessonSerializer(serializers.ModelSerializer):
     times = DateSlotSerializer(many=True, read_only=True)
     teacher = TeacherSerializer(many=True, read_only=True)
     subject = CourseSerializer(many=True, read_only=True)
     center_id = serializers.IntegerField(write_only=True, required=True)
-    durations = DurationSerializer(many=True, read_only=True)
+    duration = DurationSerializer(many=True, read_only=True)
     duration_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True)
 
     class Meta:
         model = Lesson
-        fields = ['id', 'max_students', 'startdate', 'end_date', 'times', 'teacher', 'subject', 'created_at', 'duration_days', 'durations', 'center_id', 'duration_ids']
+        fields = [
+            'id', 'max_students', 'startdate', 'end_date', 'times',
+            'teacher', 'subject', 'created_at', 'duration_days',
+            'duration', 'center_id', 'duration_ids'
+        ]
 
     def validate(self, data):
         times_data = self.initial_data.get('times', [])
@@ -267,29 +270,35 @@ class LessonSerializer(serializers.ModelSerializer):
         subjects_data = self.initial_data.get('subject', [])
         duration_ids = data.get('duration_ids', [])
 
-        # Check for duplicates in the provided lists
+        field_errors = {}
+
         if len(times_data) != len(set(times_data)):
-            raise serializers.ValidationError("Duplicate times found.")
+            field_errors['times'] = "Duplicate times found."
         if len(subjects_data) != len(set(subjects_data)):
-            raise serializers.ValidationError("Duplicate subjects found.")
+            field_errors['subject'] = "Duplicate subjects found."
         if len(duration_ids) != len(set(duration_ids)):
-            raise serializers.ValidationError("Duplicate durations found.")
+            field_errors['duration_ids'] = "Duplicate durations found."
 
-        # Check if provided teacher IDs exist
         if teachers_data and not Teacher.objects.filter(id__in=teachers_data).exists():
-            raise serializers.ValidationError("One or more provided teachers do not exist.")
-
-        # Check if provided subject IDs exist
+            field_errors['teacher'] = "One or more provided teachers do not exist."
         if subjects_data and not Course.objects.filter(id__in=subjects_data).exists():
-            raise serializers.ValidationError("One or more provided subjects do not exist.")
+            field_errors['subject'] = "One or more provided subjects do not exist."
 
-        # Check for existing lessons with the same teacher and subject
         for teacher_id in teachers_data:
             for subject_id in subjects_data:
-                if Lesson.objects.filter(teacher__id=teacher_id, subject__id=subject_id).exists():
-                    raise serializers.ValidationError(f"A lesson with teacher ID {teacher_id} and subject ID {subject_id} already exists.")
+                if self.instance:
+                    # Skip current instance check during update to avoid false positive duplicate error
+                    if Lesson.objects.filter(teacher__id=teacher_id, subject__id=subject_id).exclude(id=self.instance.id).exists():
+                        field_errors['teacher_subject'] = f"A lesson with teacher ID {teacher_id} and subject ID {subject_id} already exists."
+                else:
+                    if Lesson.objects.filter(teacher__id=teacher_id, subject__id=subject_id).exists():
+                        field_errors['teacher_subject'] = f"A lesson with teacher ID {teacher_id} and subject ID {subject_id} already exists."
+
+        if field_errors:
+            raise serializers.ValidationError(field_errors)
 
         return data
+
     def create(self, validated_data):
         times_data = self.initial_data.get('times', [])
         teachers_data = self.initial_data.get('teacher', [])
