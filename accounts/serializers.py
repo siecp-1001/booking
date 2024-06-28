@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
 import secrets
 import string
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
@@ -61,7 +62,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        
+
         # Add user type information to the response data
         data['is_teacher'] = self.user.is_teacher
         data['is_student'] = self.user.is_student
@@ -70,7 +71,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 class CenterSerializer(serializers.ModelSerializer):
-    
+
     class Meta:
         model = Center
         fields = ['id', 'user', 'address']
@@ -123,7 +124,7 @@ class StudentSerializer(serializers.ModelSerializer):
         user.name = user_data.get('name', user.name)
         user.save()
 
-        return instance    
+        return instance
 
 
 class DateSlotSerializer(serializers.ModelSerializer):
@@ -132,15 +133,15 @@ class DateSlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = DateSlot
         fields = '__all__'
-     
+
     def get_status(self, obj):
         return "true" if obj.available else "false"
 
     def create(self, validated_data):
         # Remove the 'teacher' field from validated data if present
         validated_data.pop('teacher', None)
-        return super().create(validated_data) 
-    
+        return super().create(validated_data)
+
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
@@ -154,7 +155,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     courses = CourseSerializer(many=True, required=False)
 
     class Meta:
-       
+
         model = Teacher
         fields = ['id', 'user', 'lastname', 'phone', 'center', 'center_id', 'time_slots', 'courses', 'created_at']
     def create(self, validated_data):
@@ -191,11 +192,11 @@ class TeacherSerializer(serializers.ModelSerializer):
                 instance.courses.add(course)
 
         return instance
-    
+
 
 class TeacherNameSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
-    
+
 
     class Meta:
         model = Teacher
@@ -217,19 +218,19 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         status = validated_data.pop('status', None)
-        
+
         if status is not None:
             validated_data['available'] = (status.lower() == "true")
-        
+
         date_slot = DateSlot.objects.create(**validated_data)
         return date_slot
 
     def update(self, instance, validated_data):
         status = validated_data.pop('status', None)
-        
+
         if status is not None:
             instance.available = (status.lower() == "true")
-        
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -247,35 +248,77 @@ class DurationSerializer(serializers.ModelSerializer):
         model = Duration
         fields = ['id', 'length']
 
+
 class LessonSerializer(serializers.ModelSerializer):
     times = DateSlotSerializer(many=True, read_only=True)
     teacher = TeacherSerializer(many=True, read_only=True)
     subject = CourseSerializer(many=True, read_only=True)
     center_id = serializers.IntegerField(write_only=True, required=True)
+    durations = DurationSerializer(many=True, read_only=True)
+    duration_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True)
 
     class Meta:
         model = Lesson
-        fields = ['id',  'max_students', 'startdate', 'end_date', 'times', 'teacher', 'subject', 'created_at', 'duration_days', 'duration', 'center_id']
+        fields = ['id', 'max_students', 'startdate', 'end_date', 'times', 'teacher', 'subject', 'created_at', 'duration_days', 'durations', 'center_id', 'duration_ids']
 
+    def validate(self, data):
+        times_data = self.initial_data.get('times', [])
+        teachers_data = self.initial_data.get('teacher', [])
+        subjects_data = self.initial_data.get('subject', [])
+        duration_ids = data.get('duration_ids', [])
+
+        # Check for duplicates in the provided lists
+        if len(times_data) != len(set(times_data)):
+            raise serializers.ValidationError("Duplicate times found.")
+        if len(subjects_data) != len(set(subjects_data)):
+            raise serializers.ValidationError("Duplicate subjects found.")
+        if len(duration_ids) != len(set(duration_ids)):
+            raise serializers.ValidationError("Duplicate durations found.")
+
+        # Check if provided teacher IDs exist
+        if teachers_data and not Teacher.objects.filter(id__in=teachers_data).exists():
+            raise serializers.ValidationError("One or more provided teachers do not exist.")
+
+        # Check if provided subject IDs exist
+        if subjects_data and not Course.objects.filter(id__in=subjects_data).exists():
+            raise serializers.ValidationError("One or more provided subjects do not exist.")
+
+        # Check for existing lessons with the same teacher and subject
+        for teacher_id in teachers_data:
+            for subject_id in subjects_data:
+                if Lesson.objects.filter(teacher__id=teacher_id, subject__id=subject_id).exists():
+                    raise serializers.ValidationError(f"A lesson with teacher ID {teacher_id} and subject ID {subject_id} already exists.")
+
+        return data
     def create(self, validated_data):
         times_data = self.initial_data.get('times', [])
         teachers_data = self.initial_data.get('teacher', [])
         subjects_data = self.initial_data.get('subject', [])
+        duration_ids = validated_data.pop('duration_ids', [])
         center_id = validated_data.pop('center_id')
 
         lesson = Lesson.objects.create(center_id=center_id, **validated_data)
 
-        if isinstance(times_data, list) and all(isinstance(item, int) for item in times_data):
+        if times_data and all(isinstance(item, int) for item in times_data):
             times = DateSlot.objects.filter(id__in=times_data)
             lesson.times.set(times)
 
-        if isinstance(teachers_data, list) and all(isinstance(item, int) for item in teachers_data):
-            teachers = Teacher.objects.filter(id__in=teachers_data)
-            lesson.teacher.set(teachers)
+        if teachers_data and all(isinstance(item, int) for item in teachers_data):
+            for teacher_id in teachers_data:
+                teacher = Teacher.objects.get(id=teacher_id)
+                lesson.teacher.add(teacher)
 
-        if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
-            subjects = Course.objects.filter(id__in=subjects_data)
-            lesson.subject.set(subjects)
+        if subjects_data:
+            for subject_id in subjects_data:
+                subject = Course.objects.get(id=subject_id)
+                if not lesson.subject.filter(id=subject_id).exists():
+                    lesson.subject.add(subject)
+
+        if duration_ids:
+            for duration_id in duration_ids:
+                duration = Duration.objects.get(id=duration_id)
+                if not lesson.duration.filter(id=duration_id).exists():
+                    lesson.duration.add(duration)
 
         return lesson
 
@@ -283,24 +326,33 @@ class LessonSerializer(serializers.ModelSerializer):
         times_data = self.initial_data.get('times', [])
         teachers_data = self.initial_data.get('teacher', [])
         subjects_data = self.initial_data.get('subject', [])
+        duration_ids = validated_data.pop('duration_ids', [])
         center_id = validated_data.get('center_id', instance.center_id)
 
-        instance.day = validated_data.get('day', instance.day)
         instance.max_students = validated_data.get('max_students', instance.max_students)
+        instance.startdate = validated_data.get('startdate', instance.startdate)
+        instance.end_date = validated_data.get('end_date', instance.end_date)
         instance.duration_days = validated_data.get('duration_days', instance.duration_days)
         instance.center_id = center_id
 
-        if isinstance(times_data, list) and all(isinstance(item, int) for item in times_data):
+        if times_data and all(isinstance(item, int) for item in times_data):
             times = DateSlot.objects.filter(id__in=times_data)
             instance.times.set(times)
 
-        if isinstance(teachers_data, list) and all(isinstance(item, int) for item in teachers_data):
-            teachers = Teacher.objects.filter(id__in=teachers_data)
-            instance.teacher.set(teachers)
+        if teachers_data and all(isinstance(item, int) for item in teachers_data):
+            for teacher_id in teachers_data:
+                teacher = Teacher.objects.get(id=teacher_id)
+                instance.teacher.add(teacher)
 
-        if isinstance(subjects_data, list) and all(isinstance(item, int) for item in subjects_data):
-            subjects = Course.objects.filter(id__in=subjects_data)
-            instance.subject.set(subjects)
+        if subjects_data and all(isinstance(item, int) for item in subjects_data):
+            for subject_id in subjects_data:
+                subject = Course.objects.get(id=subject_id)
+                instance.subject.add(subject)
+
+        if duration_ids and all(isinstance(item, int) for item in duration_ids):
+            for duration_id in duration_ids:
+                duration = Duration.objects.get(id=duration_id)
+                instance.duration.add(duration)
 
         instance.save()
         return instance
@@ -322,7 +374,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         subject = validated_data.get('subject')
         time_slot = validated_data.pop('time_slot')
         duration = validated_data.get('duration')
-        
+
         # Ensure the DateSlot is available
         if not time_slot.available:
             raise serializers.ValidationError("The selected time slot is not available.")
@@ -335,7 +387,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             time_slot=time_slot,
             duration=duration
         )
-        
+
         # Mark the time slot as unavailable
         time_slot.available = False
         time_slot.save()
@@ -351,11 +403,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         else:
             representation['lesson'] = "No lesson"
             representation['days_until_end'] = None
-        
+
         representation['user'] = CustomUserCreateSerializer(instance.user).data
         representation['center'] = CenterSerializer(instance.center).data
         representation['time_slot'] = DateSlotSerializer(instance.time_slot).data
-        
+
         return representation
 
     def save(self, **kwargs):
@@ -401,7 +453,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         student = request.user.student
         validated_data['student'] = student
         return super().create(validated_data)
-    
+
 
 
 
@@ -415,8 +467,8 @@ class LessonDurationSerializer(serializers.ModelSerializer):
 
 
 class LessonTimesSerializer(serializers.ModelSerializer):
-    times = DateSlotSerializer(many=True, read_only=True)
+
 
     class Meta:
         model = Lesson
-        fields = ['times']        
+        fields = ['startdate', 'end_date']

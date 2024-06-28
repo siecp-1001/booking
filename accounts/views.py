@@ -300,27 +300,14 @@ class LessonsForSubjectView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, subject_id):
-        user = request.user
-        try:
-            student = Student.objects.get(user=user)
-        except Student.DoesNotExist:
-            return Response({"detail": "Student profile not found"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not student.center:
-            return Response({"detail": "Student's center not found"}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             course = Course.objects.get(id=subject_id)
         except Course.DoesNotExist:
             return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        lessons = Lesson.objects.filter(subject=course, teacher__center=student.center).distinct()
+        lessons = Lesson.objects.filter(subject=course).distinct()
         serializer = self.get_serializer(lessons, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-
-
-
 
 
 class LessonTimesForSubjectView(generics.GenericAPIView):
@@ -328,20 +315,11 @@ class LessonTimesForSubjectView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, subject_id):
-        user = request.user
-        try:
-            student = Student.objects.get(user=user)
-        except Student.DoesNotExist:
-            return Response({"detail": "Student profile not found"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not student.center:
-            return Response({"detail": "Student's center not found"}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             course = Course.objects.get(id=subject_id)
         except Course.DoesNotExist:
             return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        lessons = Lesson.objects.filter(subject=course, teacher__center=student.center).distinct()
+        lessons = Lesson.objects.filter(subject=course).distinct()
         serializer = self.get_serializer(lessons, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)    
+        return Response(serializer.data, status=status.HTTP_200_OK)

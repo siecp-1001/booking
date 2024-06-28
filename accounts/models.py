@@ -75,7 +75,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
 
 class Center(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE, related_name='center_profile', null=True, blank=True)
-   
+    phone = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField()
 
     def __str__(self):
@@ -151,7 +151,7 @@ class Lesson(models.Model):
     subject = models.ManyToManyField(Course)
     created_at = models.DateField(auto_now_add=True)
     duration_days = models.IntegerField(default=30)  # Duration in days from creation
-    duration = models.ForeignKey(Duration, on_delete=models.CASCADE, null=True, blank=True) 
+    duration =models.ManyToManyField(Duration, null=True, blank=True) 
     def days_until_end(self):
         end_date = self.created_at + timedelta(days=self.duration_days)
         delta = end_date - date.today()
@@ -171,7 +171,7 @@ class Lesson(models.Model):
         subjects = ', '.join([str(subject) for subject in self.subject.all()])
         teachers = ', '.join([str(teacher) for teacher in self.teacher.all()])
         days_remaining = self.days_until_end()
-        return f"{subjects} by {teachers} on {self.day} ({days_remaining} days remaining)"
+        return f"{subjects} by {teachers} on  {self.startdate} ({days_remaining} days remaining)"
 
 
 class Appointment(models.Model):
