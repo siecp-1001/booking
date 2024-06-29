@@ -157,7 +157,11 @@ class Lesson(models.Model):
         delta = end_date - date.today()
         return max(delta.days, 0)  # Ensure it doesn't return negative days
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)  # Save the lesson first
+
+        if self.startdate and self.end_date:
+            self.duration_days = (self.end_date - self.startdate.date()).days
+        
+        super().save(*args, **kwargs)  # Save the lesson first # Save the lesson first
         for course in self.subject.all():
             course.teachers.add(*self.teacher.all())  # Add all teachers of this lesson to the course
             course.save()  # Save the course

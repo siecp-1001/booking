@@ -14,7 +14,8 @@ from .utils import list_urls
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from rest_framework import generics
-
+from rest_framework.response import Response
+from rest_framework import status
 from djoser import utils
 from django.conf import settings
 from djoser import utils
@@ -310,16 +311,36 @@ class LessonsForSubjectView(generics.GenericAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+
 class LessonTimesForSubjectView(generics.GenericAPIView):
     serializer_class = LessonTimesSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, subject_id):
+    def get(self, request, teacher_id):
         try:
-            course = Course.objects.get(id=subject_id)
-        except Course.DoesNotExist:
-            return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+            teacher = Teacher.objects.get(id=teacher_id)
+        except Teacher.DoesNotExist:
+            return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        lessons = Lesson.objects.filter(subject=course).distinct()
+        user = request.user
+
+        # Determine if the user is a teacher or a student and get the associated center
+        if hasattr(user, 'teacher'):
+            user_center = user.teacher.center
+        elif hasattr(user, 'student'):
+            user_center = user.student.center
+        else:
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get all courses associated with the teacher
+        courses = Course.objects.filter(teachers=teacher)
+
+        # Filter lessons based on the courses and user's center
+        lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
         serializer = self.get_serializer(lessons, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+
+
+    
