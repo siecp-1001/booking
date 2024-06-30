@@ -1,6 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import AppointmentViewSet, LessonTimesForSubjectView,LessonsForSubjectView, DateSlotViewSet,DurationListCreateAPIView, BookingViewSet, EnrollmentViewSet, index, user_dashboard,CenterViewSet,StudentViewSet,show_urls_view,CustomTokenObtainPairView, UserCreateView,LessonViewSet, teacher_list, teacher_detail, teacher_create, teacher_update, teacher_delete,SubjectViewSet, AvailableDaysView, TeachersForSubjectView, StudentCenterAPIView
+from .views import AppointmentViewSet,DurationListCreateschudelerAPIView, LessonTimesForSubjectView,LessonsForSubjectView, DateSlotViewSet,DurationListCreateAPIView, BookingViewSet, EnrollmentViewSet, index, user_dashboard,CenterViewSet,StudentViewSet,show_urls_view,CustomTokenObtainPairView, UserCreateView,LessonViewSet, teacher_list, teacher_detail, teacher_create, teacher_update, teacher_delete,SubjectViewSet, AvailableDaysView, TeachersForSubjectView, StudentCenterAPIView
 
 router = DefaultRouter()
 router.register(r'centers', CenterViewSet)
@@ -27,7 +27,8 @@ urlpatterns = [
     path('lessons-for-subject/<int:subject_id>/', LessonsForSubjectView.as_view(), name='lessons-for-subject'),
     path('subjects/<int:subject_id>/available-days/', AvailableDaysView.as_view(), name='available-days'),
     path('subjects/<int:subject_id>/teachers/', TeachersForSubjectView.as_view(), name='teachers-for-subject'),
-    path('lesson-times-for-subject/<int:subject_id>/', LessonTimesForSubjectView.as_view(), name='lesson-times-for-subject'),
+    path('lesson-times-for-subject/<int:teacher_id>/', LessonTimesForSubjectView.as_view(), name='lesson-times-for-subject'),
+    path('duration-times-for-subject/<int:teacher_id>/', DurationListCreateschudelerAPIView.as_view(), name='duration-times-for-subject'),
     path('student/center/', StudentCenterAPIView.as_view(), name='student-center')
     
 ]

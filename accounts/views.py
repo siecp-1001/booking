@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
+from .serializers import DateSlotSerializer, DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -296,6 +296,7 @@ class TeachersForSubjectView(generics.GenericAPIView):
         return Response(serializer.data)
 
 
+
 class LessonsForSubjectView(generics.GenericAPIView):
     serializer_class = LessonDurationSerializer
     permission_classes = [IsAuthenticated]
@@ -306,10 +307,20 @@ class LessonsForSubjectView(generics.GenericAPIView):
         except Course.DoesNotExist:
             return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        lessons = Lesson.objects.filter(subject=course).distinct()
+        user = request.user
+
+        # Determine if the user is a teacher or a student and get the associated center
+        if hasattr(user, 'teacher'):
+            user_center = user.teacher.center
+        elif hasattr(user, 'student'):
+            user_center = user.student.center
+        else:
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Filter lessons based on the subject and user's center
+        lessons = Lesson.objects.filter(subject=course, center=user_center).distinct()
         serializer = self.get_serializer(lessons, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
 class LessonTimesForSubjectView(generics.GenericAPIView):
@@ -342,5 +353,34 @@ class LessonTimesForSubjectView(generics.GenericAPIView):
     
 
 
+
+class DurationListCreateschudelerAPIView(generics.GenericAPIView):
+    serializer_class = DurationscSerializer
+    permission_classes=[IsAuthenticated]
+    def get(self,request,teacher_id):
+        try:
+            teacher = Teacher.objects.get(id=teacher_id)
+        except Teacher.DoesNotExist:
+             return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        user = request.user
+        if hasattr(user, 'teacher'):
+            user_center = user.teacher.center
+        elif hasattr(user, 'student'):
+            user_center = user.student.center
+        else:
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400)
+
+
+        courses= Course.objects.filter(teachers=teacher)
+
+        lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
+        serializer = self.get_serializer(lessons, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)                               
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
 
     

@@ -475,6 +475,11 @@ class LessonDurationSerializer(serializers.ModelSerializer):
 
 
 
+class DurationscSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Lesson
+        fields = ['duration']
+
 class LessonTimesSerializer(serializers.ModelSerializer):
 
 
