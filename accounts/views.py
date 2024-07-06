@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer, DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
+from .serializers import DateSlotSerializer,timesavailiable, DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -20,6 +20,7 @@ from djoser import utils
 from django.conf import settings
 from djoser import utils
 from django.conf import settings
+
 def show_urls_view(request):
     urls = list_urls()
     return JsonResponse({'urls': urls})
@@ -179,7 +180,7 @@ def teacher_detail(request, pk):
         teacher = Teacher.objects.get(pk=pk)
     except Teacher.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
-
+    
     if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
@@ -314,6 +315,8 @@ class LessonsForSubjectView(generics.GenericAPIView):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
+        elif hasattr(user, 'center'):
+            user_center = user.center    
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -340,6 +343,8 @@ class LessonTimesForSubjectView(generics.GenericAPIView):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
+        elif hasattr(user, 'center'):
+            user_center = user.center    
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -368,6 +373,8 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
+        elif hasattr(user, 'center'):
+            user_center = user.center    
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400)
 
@@ -383,4 +390,33 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
         self.perform_destroy(instance)
         return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
 
-    
+
+
+
+
+
+class TimeListAPIView(generics.GenericAPIView):
+    serializer_class = timesavailiable
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, teacher_id):
+        try:
+            teacher = Teacher.objects.get(id=teacher_id)
+        except Teacher.DoesNotExist:
+            return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if hasattr(user, 'teacher'):
+            user_center = user.teacher.center
+        elif hasattr(user, 'student'):
+            user_center = user.student.center
+        elif hasattr(user, 'center'):
+            user_center = user.center
+        else:
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_404_NOT_FOUND)
+
+        courses = Course.objects.filter(teachers=teacher)
+        lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
+
+        serializer = self.get_serializer(lessons, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

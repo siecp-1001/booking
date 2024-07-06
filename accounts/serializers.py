@@ -167,7 +167,7 @@ class TeacherSerializer(serializers.ModelSerializer):
         for course_data in courses_data:
             course, created = Course.objects.get_or_create(**course_data)
             teacher.courses.add(course)
-
+        self.send_welcome_email(user)
         return teacher
 
     def update(self, instance, validated_data):
@@ -192,7 +192,12 @@ class TeacherSerializer(serializers.ModelSerializer):
                 instance.courses.add(course)
 
         return instance
-
+    def send_welcome_email(self, user):
+        subject = 'Welcome to Our Platform'
+        message = f'Hi {user.name},\n\nThank you for registering as a teacher. You have been successfully added to our platform.'
+        email_from = settings.EMAIL_HOST_USER
+        recipient_list = [user.email]
+        send_mail(subject, message, email_from, recipient_list)
 
 class TeacherNameSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
@@ -486,3 +491,18 @@ class LessonTimesSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = ['startdate', 'end_date']
+
+
+
+
+
+
+
+
+
+class timesavailiable(serializers.ModelSerializer):
+
+
+    class Meta:
+        model = Lesson
+        fields = ['times']        
