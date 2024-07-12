@@ -1,8 +1,9 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db.models.signals import post_save, pre_delete
-from django.dispatch import receiver 
-import datetime  
+from django.dispatch import receiver
+from datetime import datetime, date, time, timedelta
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
@@ -15,20 +16,20 @@ from datetime import date, timedelta
 from django.utils.timezone import now
 
 class UserAccountManager(BaseUserManager):
-    def create_user(self, email, name, password=None, is_teacher=False, is_student=False, **extra_fields):
+    def create_user(self, email, name, password=None, is_teacher=False, is_staff=False, is_student=False, **extra_fields):
         if not email:
             raise ValueError('User must have an email address')
-        
+
         email = self.normalize_email(email)
         if password is None:
             password = self.generate_password()
-        user = self.model(email=email, name=name, is_teacher=is_teacher, is_student=is_student, **extra_fields)
+        user = self.model(email=email, name=name, is_teacher=is_teacher,is_staff=is_staff, is_student=is_student, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
-        
+
         # Send a welcome email with the password
         self.send_welcome_email(user, password)
-        
+
         return user
 
     def create_superuser(self, email, name, password=None):
@@ -37,7 +38,7 @@ class UserAccountManager(BaseUserManager):
         user.is_staff = True
         user.save(using=self._db)
         return user
-    
+
     def send_welcome_email(self, user, password):
         subject = 'Welcome to Our Platform'
         message = f'Hi {user.name},\n\nThank you for registering at our platform. Here are your login details:\n\nEmail: {user.email}\nPassword: {password}\n\nPlease keep this information secure.'
@@ -47,7 +48,7 @@ class UserAccountManager(BaseUserManager):
     def generate_password(self, length=12):
         characters = string.ascii_letters + string.digits + string.punctuation
         password = ''.join(secrets.choice(characters) for i in range(length))
-        return password   
+        return password
 
 class UserAccount(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(max_length=255, unique=True)
@@ -57,7 +58,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     is_teacher = models.BooleanField(default=False) # New field to indicate teacher status
     is_student = models.BooleanField(default=False)
     is_center = models.BooleanField(default=False)
-    
+
     objects = UserAccountManager()
 
     USERNAME_FIELD = 'email'
@@ -73,6 +74,8 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
         return self.email
 
 
+
+
 class Center(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE, related_name='center_profile', null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
@@ -81,7 +84,7 @@ class Center(models.Model):
     def __str__(self):
         return self.user.name
 
-    
+
 class Student(models.Model):
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
     lastname = models.CharField(max_length=255, blank=True, null=True)
@@ -92,22 +95,22 @@ class Student(models.Model):
     def __str__(self):
         return self.user.name if self.user else 'No User'
 
-    
+
 class Teacher(models.Model):
-  
+
     user = models.OneToOneField(UserAccount, on_delete=models.CASCADE)
-    
+
     lastname = models.CharField(max_length=255, default='', null=False)
     phone = models.CharField(max_length=20, blank=True, null=True)
-   
+
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='teachers', null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True) 
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.user.name} "
 
 
-    
+
 class Course(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
@@ -119,10 +122,10 @@ class Course(models.Model):
 
 class DateSlot(models.Model):
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='available_slots')
-    time = models.TimeField(default=datetime.time(9, 0))
+    time = models.TimeField(default=time(9, 0))
     available = models.BooleanField(default=True)
 
-    
+
     def __str__(self):
         return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
 
@@ -140,64 +143,87 @@ class Duration(models.Model):
 
     def __str__(self):
         return str(self.length)
-     
+
 class Lesson(models.Model):
     center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='lessons', null=True, blank=True)
     max_students = models.IntegerField()
-    startdate = models.DateTimeField() 
-    end_date = models.DateField(default=date.today)  
+    startdate = models.DateTimeField()
+    end_date = models.DateField(default=date.today)
     times = models.ManyToManyField(DateSlot)
     teacher = models.ManyToManyField(Teacher)
     subject = models.ManyToManyField(Course)
     created_at = models.DateField(auto_now_add=True)
     duration_days = models.IntegerField(default=30)  # Duration in days from creation
-    duration =models.ManyToManyField(Duration, null=True, blank=True) 
+    duration = models.ManyToManyField(Duration, null=True, blank=True)
     def days_until_end(self):
         end_date = self.created_at + timedelta(days=self.duration_days)
         delta = end_date - date.today()
         return max(delta.days, 0)  # Ensure it doesn't return negative days
     def save(self, *args, **kwargs):
-
         if self.startdate and self.end_date:
             self.duration_days = (self.end_date - self.startdate.date()).days
-        
-        super().save(*args, **kwargs)  # Save the lesson first # Save the lesson first
+
+        super().save(*args, **kwargs)  # Save the lesson first  # Save the lesson first
         for course in self.subject.all():
             course.teachers.add(*self.teacher.all())  # Add all teachers of this lesson to the course
             course.save()  # Save the course
 
         for teacher in self.teacher.all():
             teacher.courses.add(*self.subject.all())  # Add all subjects of this lesson to the teacher
-            teacher.save() 
-    
+            teacher.save()
+
 
     def __str__(self):
         subjects = ', '.join([str(subject) for subject in self.subject.all()])
         teachers = ', '.join([str(teacher) for teacher in self.teacher.all()])
         days_remaining = self.days_until_end()
-        return f"{subjects} by {teachers} on  {self.startdate} ({days_remaining} days remaining)"
+        return f"{subjects} by {teachers} on {self. startdate} ({days_remaining} days remaining)"
 
 
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
-    center = models.ForeignKey(Center, on_delete=models.CASCADE)
-    subject = models.ForeignKey(Course, on_delete=models.CASCADE, null=True)
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, null=True)
-    time_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE)
+    teacher = models.ForeignKey('Teacher', on_delete=models.CASCADE, null=True, blank=True)
+    center = models.ForeignKey('Center', on_delete=models.CASCADE)
+    subject = models.ForeignKey('Course', on_delete=models.CASCADE, null=True)
+    lesson = models.ForeignKey('Lesson', on_delete=models.CASCADE, null=True, blank=True)
+    time_slot = models.ForeignKey('DateSlot', on_delete=models.CASCADE)
+    day = models.DateField(default=date.today)
     duration = models.DurationField()
 
     def __str__(self):
         if self.lesson:
             days_remaining = self.lesson.days_until_end()
-            return f"{self.user} - {self.center}- {self.subject} - {self.lesson.day} ({days_remaining} days remaining) - {self.time_slot}"
+            return f"{self.user} - {self.teacher} - {self.subject} - {self.lesson} ({days_remaining} days remaining) - {self.time_slot} on {self.day}"
         else:
-            return f"{self.user} - {self.center}- {self.subject} - No lesson - {self.time_slot}"
+            return f"{self.user} - {self.teacher} - {self.subject} - No lesson - {self.time_slot} on {self.day}"
+    def save(self, *args, **kwargs):
+        # Check availability
+        if not self.check_availability(self.teacher, self.day, self.time_slot, self.duration):
+            raise ValidationError("The teacher is not available at this time slot.")
 
+        # Handle the max_students logic
+        if self.lesson:
+            if self.lesson.max_students <= 0:
+                raise ValidationError("No more students can be added to this lesson.")
+            else:
+                self.lesson.max_students -= 1
+                self.lesson.save()
+
+        super().save(*args, **kwargs)  # Save the appointment
+
+    def delete(self, *args, **kwargs):
+        if self.lesson:
+            self.lesson.max_students += 1
+            self.lesson.save()
+
+        super().delete(*args, **kwargs)  # Delete the appointment
     @staticmethod
-    def check_availability(time_slot, duration):
-        end_time = time_slot.time + duration
+    def check_availability(teacher, day, time_slot, duration):
+        start_time = datetime.combine(day, time_slot.time)
+        end_time = (start_time + duration).time()
         overlapping_appointments = Appointment.objects.filter(
-            time_slot__teacher=time_slot.teacher,
+            teacher=teacher,
+            day=day,
             time_slot__time__lt=end_time,
             time_slot__time__gte=time_slot.time
         )
@@ -221,7 +247,7 @@ class Enrollment(models.Model):
 
     def __str__(self):
         return f"{self.student.user.name} - {self.course.title}"
-    
+
 
 
 @receiver(post_save, sender=UserAccount)
@@ -266,4 +292,4 @@ def restore_date_slot_availability(sender, instance, **kwargs):
 @receiver(m2m_changed, sender=Lesson.subject.through)
 def update_courses_and_teachers(sender, instance, action, reverse, model, pk_set, **kwargs):
     if action in ["post_add", "post_remove"]:
-        instance.save()    
+        instance.save()

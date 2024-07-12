@@ -4,23 +4,27 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import DateSlotSerializer,timesavailiable, DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
+from .serializers import CreateAppointmentSerializer, DateSlotSerializer,TimesAvailableSerializer,DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from django.http import JsonResponse
 from .utils import list_urls
+from django.contrib.auth.decorators import login_required
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from rest_framework import generics
+
+from djoser import utils
+from django.conf import settings
+from djoser import utils
+from django.conf import settings
 from rest_framework.response import Response
 from rest_framework import status
-from djoser import utils
-from django.conf import settings
-from djoser import utils
-from django.conf import settings
+import logging
 
+logger = logging.getLogger(__name__)
 def show_urls_view(request):
     urls = list_urls()
     return JsonResponse({'urls': urls})
@@ -32,6 +36,8 @@ class CenterViewSet(viewsets.ModelViewSet):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
@@ -159,7 +165,8 @@ class LessonViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
- 
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsCenterUser])
 def teacher_list(request):
@@ -180,7 +187,7 @@ def teacher_detail(request, pk):
         teacher = Teacher.objects.get(pk=pk)
     except Teacher.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
-    
+
     if not request.user.is_staff and request.user.is_center and teacher.center.user != request.user:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
@@ -242,7 +249,11 @@ def user_dashboard(request):
 
     if user.is_student:
         data = {
-            "message": f"Hello {user.name}, welcome to the student dashboard",
+            "name": user.name,
+            "user_id": user.id,
+            "phone":user.student.phone,
+            "center_id": user.student.center.id,
+            "center_name": user.student.center.user.name,
             "dashboard_data": "Student-specific data here"
         }
     elif user.is_teacher:
@@ -257,9 +268,13 @@ def user_dashboard(request):
         }
     elif user.is_center:
         data = {
-            "name":  {user.name} ,
+            "name":  user.name ,
+            "email": user.email,
+            "addres": user.center_profile.address,
+            "phone": user.center_profile.phone,
             "dashboard_data": "centre-specific data here",
-            "center_id": user.center_profile.id 
+            "center_id": user.center_profile.id,
+            "user_id": user.id
         }
     else:
         data = {
@@ -275,7 +290,7 @@ def user_dashboard(request):
 class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = SubjectSerializer
-    
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
@@ -297,7 +312,6 @@ class TeachersForSubjectView(generics.GenericAPIView):
         return Response(serializer.data)
 
 
-
 class LessonsForSubjectView(generics.GenericAPIView):
     serializer_class = LessonDurationSerializer
     permission_classes = [IsAuthenticated]
@@ -315,8 +329,8 @@ class LessonsForSubjectView(generics.GenericAPIView):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
-        elif hasattr(user, 'center'):
-            user_center = user.center    
+        elif hasattr(user, 'center_profile'):
+            user_center = user.center_profile
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -326,36 +340,42 @@ class LessonsForSubjectView(generics.GenericAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+
 class LessonTimesForSubjectView(generics.GenericAPIView):
     serializer_class = LessonTimesSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, teacher_id):
+    def get(self, request, teacher_id, subject_id):
         try:
             teacher = Teacher.objects.get(id=teacher_id)
         except Teacher.DoesNotExist:
             return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        try:
+            subject = Course.objects.get(id=subject_id)
+        except Course.DoesNotExist:
+            return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
         user = request.user
 
-        # Determine if the user is a teacher or a student and get the associated center
+        # Determine if the user is a teacher, student, or center and get the associated center
         if hasattr(user, 'teacher'):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
-        elif hasattr(user, 'center'):
-            user_center = user.center    
+        elif hasattr(user, 'center_profile'):
+            user_center = user.center_profile
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get all courses associated with the teacher
-        courses = Course.objects.filter(teachers=teacher)
-
-        # Filter lessons based on the courses and user's center
-        lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
+        # Get lessons based on teacher, subject, and user's center
+        lessons = Lesson.objects.filter(teacher=teacher, subject=subject, center=user_center).distinct()
         serializer = self.get_serializer(lessons, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+
+
+
 
 
 
@@ -367,24 +387,24 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
             teacher = Teacher.objects.get(id=teacher_id)
         except Teacher.DoesNotExist:
              return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
-        
+
         user = request.user
         if hasattr(user, 'teacher'):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
-        elif hasattr(user, 'center'):
-            user_center = user.center    
+        elif hasattr(user, 'center_profile'):
+            user_center = user.center_profile
         else:
-            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400)
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
 
         courses= Course.objects.filter(teachers=teacher)
 
         lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
         serializer = self.get_serializer(lessons, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)                               
-    
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
@@ -393,10 +413,8 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
 
 
 
-
-
 class TimeListAPIView(generics.GenericAPIView):
-    serializer_class = timesavailiable
+    serializer_class = TimesAvailableSerializer
     permission_classes = [IsAuthenticated]
 
     def get(self, request, teacher_id):
@@ -410,8 +428,8 @@ class TimeListAPIView(generics.GenericAPIView):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
             user_center = user.student.center
-        elif hasattr(user, 'center'):
-            user_center = user.center
+        elif hasattr(user, 'center_profile'):
+            user_center = user.center_profile
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -420,3 +438,111 @@ class TimeListAPIView(generics.GenericAPIView):
 
         serializer = self.get_serializer(lessons, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class TeacherSchedulesAPIView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            user = self.request.user
+
+            # Determine the user type and get their associated center
+            if hasattr(user, 'student'):
+                center = user.student.center
+                appointments = Appointment.objects.filter(user=user).prefetch_related('teacher__user', 'time_slot')
+            elif hasattr(user, 'teacher'):
+                center = user.teacher.center
+                appointments = Appointment.objects.filter(teacher=user.teacher).prefetch_related('user', 'time_slot')
+            elif hasattr(user, 'center_profile'):
+                center = user.center_profile
+                teachers = Teacher.objects.filter(center=center)
+                appointments = Appointment.objects.filter(teacher__center=center).prefetch_related('user', 'teacher__user', 'time_slot')
+            else:
+                return Response({"detail": "User is not associated with any center."}, status=status.HTTP_404_NOT_FOUND)
+
+            if center is None:
+                return Response({"detail": "User is not associated with any center."}, status=status.HTTP_404_NOT_FOUND)
+
+            data = []
+
+            if hasattr(user, 'student'):
+                teacher_dict = {}
+                for appointment in appointments:
+                    teacher_name = appointment.teacher.user.name
+                    teacher_id = appointment.teacher.user.id
+                    time = appointment.time_slot.time.strftime('%I:%M %p')
+
+                    if teacher_id not in teacher_dict:
+                        teacher_dict[teacher_id] = {
+                            "id": teacher_id,
+                            "teacher": teacher_name,
+                            time: [{
+                                "name": user.name,
+                                "id": user.id
+                            }]
+                        }
+                    else:
+                        if time not in teacher_dict[teacher_id]:
+                            teacher_dict[teacher_id][time] = []
+                        teacher_dict[teacher_id][time].append({
+                            "name": user.name,
+                            "id": user.id
+                        })
+                data.extend(teacher_dict.values())
+
+            elif hasattr(user, 'teacher'):
+                schedule = {
+                    "id": user.id,
+                    "teacher": user.teacher.user.name,
+                }
+                for appointment in appointments:
+                    time = appointment.time_slot.time.strftime('%I:%M %p')
+                    if time not in schedule:
+                        schedule[time] = []
+                    schedule[time].append({
+                        "name": appointment.user.name,
+                        "id": appointment.user.id
+                    })
+                data.append(schedule)
+
+            elif hasattr(user, 'center_profile'):
+                for teacher in teachers:
+                    schedule = {
+                        "id": teacher.id,
+                        "teacher": teacher.user.name
+                    }
+                    teacher_appointments = appointments.filter(teacher=teacher)
+                    for appointment in teacher_appointments:
+                        time = appointment.time_slot.time.strftime('%I:%M %p')
+                        if time not in schedule:
+                            schedule[time] = []
+                        schedule[time].append({
+                            "name": appointment.user.name,
+                            "id": appointment.user.id
+                        })
+                    data.append(schedule)
+
+            return Response(data, status=status.HTTP_200_OK)
+
+        except user.DoesNotExist:
+            return Response({"detail": "User account not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class CreateAppointmentView(APIView):
+    def post(self, request, *args, **kwargs):
+        serializer = CreateAppointmentSerializer(data=request.data)
+        if serializer.is_valid():
+            appointment = serializer.save()
+            return Response({
+                "id": appointment.id,
+                "user": appointment.user.id,
+                "teacher": appointment.teacher.id,
+                "center": appointment.center.id,
+                "subject": appointment.subject.id,
+                "time_slot": appointment.time_slot.id,
+                "day": appointment.day,
+                "duration": appointment.duration
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from djoser.serializers import UserCreateSerializer as DjoserUserCreateSerializer
 import secrets
 import string
+from datetime import datetime, date, time, timedelta
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -14,6 +15,9 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.conf import settings
 from django.utils.crypto import get_random_string
+import logging
+
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -54,6 +58,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Add custom claims
         token['is_active'] = user.is_active
+        token['is_staff'] = user.is_staff
         token['is_teacher'] = user.is_teacher
         token['is_student'] = user.is_student
         token['is_center'] = user.is_center
@@ -65,6 +70,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Add user type information to the response data
         data['is_teacher'] = self.user.is_teacher
+        data['is_staff'] =self.user.is_staff
         data['is_student'] = self.user.is_student
         data['is_center'] = self.user.is_center
 
@@ -147,27 +153,37 @@ class CourseSerializer(serializers.ModelSerializer):
         model = Course
         fields = ['id', 'title', 'description', 'created_at']
 
+
+
 class TeacherSerializer(serializers.ModelSerializer):
     user = CustomUserCreateSerializer()
-    center_id = serializers.IntegerField(source='center.id', read_only=True)  # Add this line
+    center_id = serializers.IntegerField(source='center.id', read_only=True)
     center = serializers.PrimaryKeyRelatedField(queryset=Center.objects.all())
     time_slots = DateSlotSerializer(many=True, read_only=True)
     courses = CourseSerializer(many=True, required=False)
 
     class Meta:
-
         model = Teacher
         fields = ['id', 'user', 'lastname', 'phone', 'center', 'center_id', 'time_slots', 'courses', 'created_at']
+
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         courses_data = validated_data.pop('courses', [])
+
+        # Generate a random password
+        password = self.generate_password()
+        user_data['password'] = password
+
         user = User.objects.create(**user_data)
         teacher = Teacher.objects.create(user=user, **validated_data)
 
         for course_data in courses_data:
             course, created = Course.objects.get_or_create(**course_data)
             teacher.courses.add(course)
-        self.send_welcome_email(user)
+
+        # Send a welcome email with the password
+        self.send_welcome_email(user, password)
+
         return teacher
 
     def update(self, instance, validated_data):
@@ -192,13 +208,18 @@ class TeacherSerializer(serializers.ModelSerializer):
                 instance.courses.add(course)
 
         return instance
-    def send_welcome_email(self, user):
+
+    def send_welcome_email(self, user, password):
         subject = 'Welcome to Our Platform'
-        message = f'Hi {user.name},\n\nThank you for registering as a teacher. You have been successfully added to our platform.'
+        message = f'Hi {user.name},\n\nThank you for registering as a teacher. You have been successfully added to our platform.\n\nYour login details are:\nEmail: {user.email}\nPassword: {password}\n\nPlease keep this information secure.'
         email_from = settings.EMAIL_HOST_USER
         recipient_list = [user.email]
         send_mail(subject, message, email_from, recipient_list)
 
+    def generate_password(self, length=12):
+        characters = string.ascii_letters + string.digits + string.punctuation
+        password = ''.join(secrets.choice(characters) for i in range(length))
+        return password
 class TeacherNameSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
 
@@ -478,8 +499,6 @@ class LessonDurationSerializer(serializers.ModelSerializer):
         fields = ['duration_days', 'created_at']
 
 
-
-
 class DurationscSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
@@ -498,11 +517,52 @@ class LessonTimesSerializer(serializers.ModelSerializer):
 
 
 
-
-
-class timesavailiable(serializers.ModelSerializer):
-
+class TimesAvailableSerializer(serializers.ModelSerializer):
+    times = DateSlotSerializer(many=True, read_only=True)
 
     class Meta:
         model = Lesson
-        fields = ['times']        
+        fields = ['times']
+
+
+
+
+class CreateAppointmentSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(write_only=True)
+    teacher = serializers.IntegerField(write_only=True)
+    time_slot_id = serializers.IntegerField(write_only=True)
+    subject_id = serializers.IntegerField(write_only=True)
+    day = serializers.DateField()
+
+    class Meta:
+        model = Appointment
+        fields = ['user_id', 'teacher', 'time_slot_id', 'subject_id', 'day', 'duration']
+
+    def create(self, validated_data):
+        user_id = validated_data.pop('user_id')
+        teacher_id = validated_data.pop('teacher')
+        time_slot_id = validated_data.pop('time_slot_id')
+        subject_id = validated_data.pop('subject_id')
+        day = validated_data.pop('day')
+        duration = validated_data['duration']
+
+        user = User.objects.get(id=user_id)
+        teacher = Teacher.objects.get(id=teacher_id)
+        time_slot = DateSlot.objects.get(id=time_slot_id)
+        subject = Course.objects.get(id=subject_id)
+
+        # Check for availability
+        if not Appointment.check_availability(teacher, day, time_slot, duration):
+            raise serializers.ValidationError("This time slot is not available for the selected teacher.")
+
+        appointment = Appointment.objects.create(
+            user=user,
+            teacher=teacher,
+            center=teacher.center,
+            subject=subject,
+            time_slot=time_slot,
+            day=day,
+            duration=duration
+        )
+
+        return appointment
