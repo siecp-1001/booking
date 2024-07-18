@@ -115,6 +115,7 @@ class Course(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     teachers = models.ManyToManyField(Teacher, related_name='courses')
+    center = models.ForeignKey(Center, on_delete=models.CASCADE, related_name='courses')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

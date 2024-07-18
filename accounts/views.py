@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import CreateAppointmentSerializer, DateSlotSerializer,TimesAvailableSerializer,DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
+from .serializers import  UserDetailSerializer,CreateAppointmentSerializer, DateSlotSerializer,TimesAvailableSerializer,DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -15,15 +15,16 @@ from django.contrib.auth.decorators import login_required
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from rest_framework import generics
-
+from rest_framework.exceptions import NotFound
 from djoser import utils
 from django.conf import settings
 from djoser import utils
+from datetime import datetime
 from django.conf import settings
 from rest_framework.response import Response
 from rest_framework import status
 import logging
-
+User = get_user_model()
 logger = logging.getLogger(__name__)
 def show_urls_view(request):
     urls = list_urls()
@@ -249,7 +250,7 @@ def user_dashboard(request):
 
     if user.is_student:
         data = {
-            "name": user.name,
+            "name":  user.student.center.user.name,
             "user_id": user.id,
             "phone":user.student.phone,
             "center_id": user.student.center.id,
@@ -288,14 +289,30 @@ def user_dashboard(request):
 
 
 class SubjectViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.all()
+    queryset = Course.objects.all()  # Default queryset
     serializer_class = SubjectSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if hasattr(user, 'student'):
+            center = user.student.center
+        elif hasattr(user, 'teacher'):
+            center = user.teacher.center
+        elif hasattr(user, 'center_profile'):
+            center = user.center_profile
+        else:
+            center = None
+
+        if center is not None:
+            return Course.objects.filter(center=center)
+        else:
+            return Course.objects.none()  # Return an empty queryset if the user has no associated center
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response({'detail': 'Delete success.'}, status=status.HTTP_204_NO_CONTENT)
-
 
 class AvailableDaysView(generics.GenericAPIView):
     def get(self, request, subject_id):
@@ -447,17 +464,27 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
         try:
             user = self.request.user
 
+            # Get the date from the request
+            date_str = request.query_params.get('date')
+            if date_str:
+                try:
+                    date = datetime.strptime(date_str, '%d/%m/%Y').date()
+                except ValueError:
+                    return Response({"detail": "Invalid date format. Use DD/MM/YYYY."}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response({"detail": "Date parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+
             # Determine the user type and get their associated center
             if hasattr(user, 'student'):
                 center = user.student.center
-                appointments = Appointment.objects.filter(user=user).prefetch_related('teacher__user', 'time_slot')
+                appointments = Appointment.objects.filter(user=user, day=date).prefetch_related('teacher__user', 'time_slot')
             elif hasattr(user, 'teacher'):
                 center = user.teacher.center
-                appointments = Appointment.objects.filter(teacher=user.teacher).prefetch_related('user', 'time_slot')
+                appointments = Appointment.objects.filter(teacher=user.teacher, day=date).prefetch_related('user', 'time_slot')
             elif hasattr(user, 'center_profile'):
                 center = user.center_profile
                 teachers = Teacher.objects.filter(center=center)
-                appointments = Appointment.objects.filter(teacher__center=center).prefetch_related('user', 'teacher__user', 'time_slot')
+                appointments = Appointment.objects.filter(teacher__center=center, day=date).prefetch_related('user', 'teacher__user', 'time_slot')
             else:
                 return Response({"detail": "User is not associated with any center."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -491,18 +518,23 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
                         })
                 data.extend(teacher_dict.values())
 
+
             elif hasattr(user, 'teacher'):
                 schedule = {
                     "id": user.id,
                     "teacher": user.teacher.user.name,
+                    "appointments": []
                 }
                 for appointment in appointments:
                     time = appointment.time_slot.time.strftime('%I:%M %p')
-                    if time not in schedule:
-                        schedule[time] = []
-                    schedule[time].append({
-                        "name": appointment.user.name,
-                        "id": appointment.user.id
+
+                    schedule["appointments"].append({
+
+                        "time": time,
+                        "student": {
+                            "name": appointment.user.name,
+                            "id": appointment.user.id
+                        }
                     })
                 data.append(schedule)
 
@@ -530,6 +562,23 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
+User = get_user_model()
+
+
+class UserDetailView(generics.RetrieveAPIView):
+    queryset = User.objects.all()
+    serializer_class = CustomUserCreateSerializer
+
+    def get(self, request, *args, **kwargs):
+        user_id = kwargs.get('pk')
+        try:
+            user = self.queryset.get(pk=user_id)
+            serializer = self.serializer_class(user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
 class CreateAppointmentView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = CreateAppointmentSerializer(data=request.data)
@@ -546,3 +595,51 @@ class CreateAppointmentView(APIView):
                 "duration": appointment.duration
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def user_dwatial(request, pk):
+    try:
+        user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        raise NotFound("User not found")
+
+    if hasattr(user, 'student'):
+        data = {
+            "name": user.name,
+            "user_id": user.id,
+            "phone": user.student.phone,
+            "email": user.email,
+            "center_id": user.student.center.id,
+            "center_name": user.student.center.user.name,
+            "dashboard_data": "Student-specific data here"
+        }
+    elif hasattr(user, 'teacher'):
+        data = {
+            "message": f"Hello {user.name}, welcome to the teacher dashboard",
+            "dashboard_data": "Teacher-specific data here"
+        }
+    elif user.is_staff:
+        data = {
+            "message": f"Hello {user.name}, welcome to the admin dashboard",
+            "dashboard_data": "Admin-specific data here"
+        }
+    elif hasattr(user, 'center_profile'):
+        data = {
+            "name": user.name,
+            "email": user.email,
+            "address": user.center_profile.address,
+            "phone": user.center_profile.phone,
+            "dashboard_data": "Centre-specific data here",
+            "center_id": user.center_profile.id,
+            "user_id": user.id
+        }
+    else:
+        data = {
+            "message": "User type is not recognized",
+            "dashboard_data": "No specific data available"
+        }
+
+    return Response(data)
