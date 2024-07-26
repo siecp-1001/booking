@@ -28,10 +28,11 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
     is_teacher = serializers.BooleanField(required=False, default=False)
     is_student = serializers.BooleanField(required=False, default=False)
     is_center = serializers.BooleanField(required=False, default=False)
+    is_pending= serializers.BooleanField(required=False, default=False)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'password', 'is_teacher', 'is_student', 'is_center', 'is_active', 'is_staff']
+        fields = ['id', 'email', 'name', 'password', 'is_teacher', 'is_student', 'is_center', 'is_active', 'is_staff','is_pending']
         extra_kwargs = {'password': {'write_only': True}}
 
     def validate_email(self, value):
@@ -62,6 +63,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['is_teacher'] = user.is_teacher
         token['is_student'] = user.is_student
         token['is_center'] = user.is_center
+        token['is_pending'] = user.is_pending
+
 
         return token
 
@@ -73,6 +76,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['is_staff'] =self.user.is_staff
         data['is_student'] = self.user.is_student
         data['is_center'] = self.user.is_center
+        data['is_pending'] = self.user.is_pending
 
         return data
 
@@ -229,9 +233,9 @@ class TeacherNameSerializer(serializers.ModelSerializer):
         fields = ('name','id')
 from rest_framework import serializers
 
+
 class DateSlotSerializer(serializers.ModelSerializer):
     time = serializers.CharField(required=True)  # Ensure this field is required
-    teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.all(), required=True)  # Ensure this field is required
 
     class Meta:
         model = DateSlot
@@ -265,7 +269,6 @@ class DateSlotSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
-        ret['status'] = "true" if instance.available else "false"
         return ret
 
 
@@ -501,8 +504,8 @@ class LessonDurationSerializer(serializers.ModelSerializer):
 
 class DurationscSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Lesson
-        fields = ['duration']
+        model = Duration
+        fields = ['id', 'length']
 
 class LessonTimesSerializer(serializers.ModelSerializer):
 
@@ -546,10 +549,19 @@ class CreateAppointmentSerializer(serializers.ModelSerializer):
         day = validated_data.pop('day')
         duration = validated_data['duration']
 
-        user = User.objects.get(id=user_id)
-        teacher = Teacher.objects.get(id=teacher_id)
-        time_slot = DateSlot.objects.get(id=time_slot_id)
-        subject = Course.objects.get(id=subject_id)
+        try:
+            user =User.objects.get(id=user_id)
+            teacher = Teacher.objects.get(id=teacher_id)
+            time_slot = DateSlot.objects.get(id=time_slot_id)
+            subject = Course.objects.get(id=subject_id)
+        except user.DoesNotExist:
+            raise serializers.ValidationError("User not found.")
+        except Teacher.DoesNotExist:
+            raise serializers.ValidationError("Teacher not found.")
+        except DateSlot.DoesNotExist:
+            raise serializers.ValidationError("Time slot not found.")
+        except Course.DoesNotExist:
+            raise serializers.ValidationError("Subject not found.")
 
         # Check for availability
         if not Appointment.check_availability(teacher, day, time_slot, duration):
@@ -566,3 +578,10 @@ class CreateAppointmentSerializer(serializers.ModelSerializer):
         )
 
         return appointment
+
+
+
+class UserDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'name']

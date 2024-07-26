@@ -40,6 +40,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 
 
+
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
@@ -64,8 +65,15 @@ class StudentViewSet(viewsets.ModelViewSet):
         student = self.get_object()
         delete_request, created = DeleteRequest.objects.get_or_create(student=student, requested_by=request.user)
         if created:
+            delete_request.status = 'pending'
+            delete_request.save()
             delete_request_created.send(sender=self.__class__, delete_request=delete_request)
-            return Response({'status': 'Delete request created, waiting for admin confirmation.'})
+
+            # Update the user's is_pending field
+            student.user.is_pending = True
+            student.user.save()
+
+            return Response({'status': 'Delete request created, status pending, waiting for admin confirmation.'})
         return Response({'status': 'Delete request already exists, waiting for admin confirmation.'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
@@ -73,12 +81,16 @@ class StudentViewSet(viewsets.ModelViewSet):
         try:
             delete_request = DeleteRequest.objects.get(student__id=pk, confirmed=False)
             delete_request.confirmed = True
+            delete_request.status = 'confirmed'
             delete_request.save()
             student = delete_request.student
+            student.user.is_pending = False  # Reset is_pending field when confirmed
+            student.user.save()
             student.delete()
             return Response({'status': 'Student deleted successfully.'})
         except DeleteRequest.DoesNotExist:
             return Response({'detail': 'No pending delete request for this student.'}, status=status.HTTP_400_BAD_REQUEST)
+
 class DateSlotViewSet(viewsets.ModelViewSet):
     queryset = DateSlot.objects.all()
     serializer_class = DateSlotSerializer
@@ -275,6 +287,7 @@ def user_dashboard(request):
             "phone": user.center_profile.phone,
             "dashboard_data": "centre-specific data here",
             "center_id": user.center_profile.id,
+
             "user_id": user.id
         }
     else:
@@ -322,11 +335,36 @@ class AvailableDaysView(generics.GenericAPIView):
         return Response(available_days)
 
 class TeachersForSubjectView(generics.GenericAPIView):
+    serializer_class = TeacherNameSerializer
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, subject_id):
-        subject = get_object_or_404(Course, id=subject_id)
-        teachers = subject.teachers.all()
-        serializer = TeacherNameSerializer(teachers, many=True)
-        return Response(serializer.data)
+        try:
+            course = Course.objects.get(id=subject_id)
+        except Course.DoesNotExist:
+            return Response({"detail": "Subject not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+
+        # Determine if the user is a teacher or a student and get the associated center
+        if hasattr(user, 'teacher'):
+            user_center = user.teacher.center
+        elif hasattr(user, 'student'):
+            user_center = user.student.center
+        elif hasattr(user, 'center_profile'):
+            user_center = user.center_profile
+        else:
+            return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Filter teachers based on the subject and user's center
+        lessons = Lesson.objects.filter(center=user_center, subject=course).distinct()
+
+        # Extract teachers from these lessons
+        teachers = Teacher.objects.filter(lesson__in=lessons).distinct()
+
+        serializer = self.get_serializer(teachers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 
 class LessonsForSubjectView(generics.GenericAPIView):
@@ -398,12 +436,13 @@ class LessonTimesForSubjectView(generics.GenericAPIView):
 
 class DurationListCreateschudelerAPIView(generics.GenericAPIView):
     serializer_class = DurationscSerializer
-    permission_classes=[IsAuthenticated]
-    def get(self,request,teacher_id):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, teacher_id):
         try:
             teacher = Teacher.objects.get(id=teacher_id)
         except Teacher.DoesNotExist:
-             return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Teacher not found"}, status=status.HTTP_404_NOT_FOUND)
 
         user = request.user
         if hasattr(user, 'teacher'):
@@ -415,11 +454,21 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
-
-        courses= Course.objects.filter(teachers=teacher)
-
+        courses = Course.objects.filter(teachers=teacher)
         lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
-        serializer = self.get_serializer(lessons, many=True)
+
+        # Use a set to collect unique durations
+        unique_durations = set()
+
+        for lesson in lessons:
+            for duration in lesson.duration.all():
+                unique_durations.add(duration)
+
+        # Convert set to list for serialization
+        unique_durations_list = list(unique_durations)
+
+        # Serialize the unique durations
+        serializer = self.get_serializer(unique_durations_list, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
@@ -430,8 +479,9 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
 
 
 
+
 class TimeListAPIView(generics.GenericAPIView):
-    serializer_class = TimesAvailableSerializer
+    serializer_class = DateSlotSerializer
     permission_classes = [IsAuthenticated]
 
     def get(self, request, teacher_id):
@@ -453,8 +503,20 @@ class TimeListAPIView(generics.GenericAPIView):
         courses = Course.objects.filter(teachers=teacher)
         lessons = Lesson.objects.filter(subject__in=courses, center=user_center).distinct()
 
-        serializer = self.get_serializer(lessons, many=True)
+        # Use a set to collect unique date slots
+        unique_date_slots = set()
+
+        for lesson in lessons:
+            for date_slot in lesson.times.all():
+                unique_date_slots.add(date_slot)
+
+        # Convert set to list for serialization
+        unique_date_slots_list = list(unique_date_slots)
+
+        # Serialize the unique date slots
+        serializer = self.get_serializer(unique_date_slots_list, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 
 class TeacherSchedulesAPIView(generics.GenericAPIView):
@@ -516,8 +578,7 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
                             "name": user.name,
                             "id": user.id
                         })
-                data.extend(teacher_dict.values())
-
+                data.extend([entry for entry in teacher_dict.values() if any(k != "id" and k != "teacher" for k in entry)])
 
             elif hasattr(user, 'teacher'):
                 schedule = {
@@ -536,7 +597,8 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
                             "id": appointment.user.id
                         }
                     })
-                data.append(schedule)
+                if schedule["appointments"]:
+                    data.append(schedule)
 
             elif hasattr(user, 'center_profile'):
                 for teacher in teachers:
@@ -553,15 +615,16 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
                             "name": appointment.user.name,
                             "id": appointment.user.id
                         })
-                    data.append(schedule)
+                    if any(k != "id" and k != "teacher" for k in schedule):
+                        data.append(schedule)
 
+            # Return the response with the data or an empty list if no data is found
             return Response(data, status=status.HTTP_200_OK)
 
         except user.DoesNotExist:
             return Response({"detail": "User account not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 User = get_user_model()
 
@@ -583,19 +646,22 @@ class CreateAppointmentView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = CreateAppointmentSerializer(data=request.data)
         if serializer.is_valid():
-            appointment = serializer.save()
-            return Response({
-                "id": appointment.id,
-                "user": appointment.user.id,
-                "teacher": appointment.teacher.id,
-                "center": appointment.center.id,
-                "subject": appointment.subject.id,
-                "time_slot": appointment.time_slot.id,
-                "day": appointment.day,
-                "duration": appointment.duration
-            }, status=status.HTTP_201_CREATED)
+            try:
+                appointment = serializer.save()
+                return Response({
+                    "id": appointment.id,
+                    "user": appointment.user.id,
+                    "name": appointment.user.name,
+                    "teacher": appointment.teacher.id,
+                    "center": appointment.center.id,
+                    "subject": appointment.subject.id,
+                    "time_slot": appointment.time_slot.id,
+                    "day": appointment.day,
+                    "duration": appointment.duration
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 @api_view(["GET"])
@@ -606,40 +672,171 @@ def user_dwatial(request, pk):
     except User.DoesNotExist:
         raise NotFound("User not found")
 
+    def format_duration(duration):
+        if duration is not None:
+            total_seconds = int(duration.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours:02}:{minutes:02}:{seconds:02}"
+        return None
+
+    data = {}
     if hasattr(user, 'student'):
-        data = {
+        # Fetch the latest appointment for the student
+        latest_appointment = Appointment.objects.filter(user=user).order_by('-day').first()
+        duration = format_duration(latest_appointment.duration) if latest_appointment else None
+        data.update({
             "name": user.name,
             "user_id": user.id,
             "phone": user.student.phone,
             "email": user.email,
             "center_id": user.student.center.id,
             "center_name": user.student.center.user.name,
+            "duration": duration,
             "dashboard_data": "Student-specific data here"
-        }
+        })
     elif hasattr(user, 'teacher'):
-        data = {
+        # Fetch the latest appointment for the teacher
+        latest_appointment = Appointment.objects.filter(teacher=user.teacher).order_by('-day').first()
+        duration = format_duration(latest_appointment.duration) if latest_appointment else None
+        data.update({
             "message": f"Hello {user.name}, welcome to the teacher dashboard",
+            "duration": duration,
             "dashboard_data": "Teacher-specific data here"
-        }
+        })
     elif user.is_staff:
-        data = {
+        data.update({
             "message": f"Hello {user.name}, welcome to the admin dashboard",
             "dashboard_data": "Admin-specific data here"
-        }
+        })
     elif hasattr(user, 'center_profile'):
-        data = {
+        # Fetch the latest appointment for the center
+        latest_appointment = Appointment.objects.filter(center=user.center_profile).order_by('-day').first()
+        duration = format_duration(latest_appointment.duration) if latest_appointment else None
+        data.update({
             "name": user.name,
             "email": user.email,
             "address": user.center_profile.address,
             "phone": user.center_profile.phone,
-            "dashboard_data": "Centre-specific data here",
+            "duration": duration,
+            "dashboard_data": "Center-specific data here",
             "center_id": user.center_profile.id,
             "user_id": user.id
-        }
+        })
     else:
-        data = {
+        data.update({
             "message": "User type is not recognized",
             "dashboard_data": "No specific data available"
+        })
+
+    return Response(data)
+
+
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def user_appionmentview(request, pk):
+    try:
+        user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        raise NotFound("User not found")
+
+    def format_duration(duration):
+        if duration is not None:
+            total_seconds = int(duration.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours:02}:{minutes:02}:{seconds:02}"
+        return None
+
+    def get_model_name(obj):
+        if obj is None:
+            return None
+        return getattr(obj, 'name', str(obj))  # Fallback to string conversion if 'name' attribute is not found
+
+    def format_appointment(appointment):
+        return {
+            "id": appointment.id,
+            "student": get_model_name(appointment.user),
+            "teacher": get_model_name(appointment.teacher),
+            "center": get_model_name(appointment.center),
+            "subject": get_model_name(appointment.subject),
+            "lesson": get_model_name(appointment.lesson),
+            "time_slot": str(appointment.time_slot),
+            "day": appointment.day.strftime("%Y-%m-%d"),
+            "duration": format_duration(appointment.duration),
         }
+
+    data = {}
+    if hasattr(user, 'student'):
+        latest_appointment = Appointment.objects.filter(user=user).order_by('-day').first()
+        if latest_appointment:
+            data.update({
+                "name": user.name,
+                "user_id": user.id,
+                "phone": user.student.phone,
+                "email": user.email,
+                "center_id": user.student.center.id,
+                "center_name": user.student.center.user.name,
+                "appointment": format_appointment(latest_appointment),
+                "message": f"Hello {user.name}, welcome to the teacher dashboard",
+                "dashboard_data": "Student-specific data here"
+            })
+        else:
+            data.update({
+                "name": user.name,
+                "user_id": user.id,
+                "phone": user.student.phone,
+                "email": user.email,
+                "center_id": user.student.center.id,
+                "center_name": user.student.center.user.name,
+                "dashboard_data": "No appointments found"
+            })
+    elif hasattr(user, 'teacher'):
+        latest_appointment = Appointment.objects.filter(teacher=user.teacher).order_by('-day').first()
+        if latest_appointment:
+            data.update({
+                "message": f"Hello {user.name}, welcome to the teacher dashboard",
+                "appointment": format_appointment(latest_appointment),
+                "dashboard_data": "Teacher-specific data here"
+            })
+        else:
+            data.update({
+                "message": f" {user.name}: no appienments here",
+                "dashboard_data": "No appointments found"
+            })
+    elif user.is_staff:
+        data.update({
+            "message": f"Hello {user.name}, welcome to the admin dashboard",
+            "dashboard_data": "Admin-specific data here"
+        })
+    elif hasattr(user, 'center_profile'):
+        latest_appointment = Appointment.objects.filter(center=user.center_profile).order_by('-day').first()
+        if latest_appointment:
+            data.update({
+                "name": user.name,
+                "email": user.email,
+                "address": user.center_profile.address,
+                "phone": user.center_profile.phone,
+                "appointment": format_appointment(latest_appointment),
+                "dashboard_data": "Center-specific data here",
+                "center_id": user.center_profile.id,
+                "user_id": user.id
+            })
+        else:
+            data.update({
+                "name": user.name,
+                "email": user.email,
+                "address": user.center_profile.address,
+                "phone": user.center_profile.phone,
+                "dashboard_data": "No appointments found"
+            })
+    else:
+        data.update({
+            "message": "User type is not recognized",
+            "dashboard_data": "No specific data available"
+        })
 
     return Response(data)

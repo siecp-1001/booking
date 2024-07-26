@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.db.models.signals import post_save, pre_delete
+from django.db.models.signals import post_save, pre_delete,post_delete
 from django.dispatch import receiver
 from datetime import datetime, date, time, timedelta
 from django.core.exceptions import ValidationError
@@ -14,9 +14,9 @@ import string
 from django.db.models.signals import m2m_changed
 from datetime import date, timedelta
 from django.utils.timezone import now
-
+import logging
 class UserAccountManager(BaseUserManager):
-    def create_user(self, email, name, password=None, is_teacher=False, is_staff=False, is_student=False, **extra_fields):
+    def create_user(self, email, name, password=None, is_pending=False, is_teacher=False, is_staff=False, is_student=False, **extra_fields):
         if not email:
             raise ValueError('User must have an email address')
 
@@ -58,6 +58,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin):
     is_teacher = models.BooleanField(default=False) # New field to indicate teacher status
     is_student = models.BooleanField(default=False)
     is_center = models.BooleanField(default=False)
+    is_pending = models.BooleanField(default=False)
 
     objects = UserAccountManager()
 
@@ -121,23 +122,31 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
-class DateSlot(models.Model):
-    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='available_slots')
-    time = models.TimeField(default=time(9, 0))
-    available = models.BooleanField(default=True)
 
+class DateSlot(models.Model):
+    # Remove the teacher field
+    # teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='available_slots')
+    time = models.TimeField(default=time(9, 0))
+    available = models.BooleanField(default=True, editable=False)  # Always True and not editable
+
+    def save(self, *args, **kwargs):
+        self.available = True  # Ensure it is always True
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.time} - {'Available' if self.available else 'Unavailable'}"
+
+
 
 
 class DeleteRequest(models.Model):
     student = models.ForeignKey('Student', on_delete=models.CASCADE)
     requested_by = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
     confirmed = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, default='pending')
 
     def __str__(self):
-        return f"Delete request for {self.student.user.username} by {self.requested_by.username}"
+        return f"Delete request for {self.student} by {self.requested_by} (Status: {self.status})"
 
 class Duration(models.Model):
     length = models.DurationField()  # Duration as a time period
@@ -156,15 +165,17 @@ class Lesson(models.Model):
     created_at = models.DateField(auto_now_add=True)
     duration_days = models.IntegerField(default=30)  # Duration in days from creation
     duration = models.ManyToManyField(Duration, null=True, blank=True)
+
     def days_until_end(self):
         end_date = self.created_at + timedelta(days=self.duration_days)
         delta = end_date - date.today()
         return max(delta.days, 0)  # Ensure it doesn't return negative days
+
     def save(self, *args, **kwargs):
         if self.startdate and self.end_date:
             self.duration_days = (self.end_date - self.startdate.date()).days
+        super().save(*args, **kwargs)
 
-        super().save(*args, **kwargs)  # Save the lesson first  # Save the lesson first
         for course in self.subject.all():
             course.teachers.add(*self.teacher.all())  # Add all teachers of this lesson to the course
             course.save()  # Save the course
@@ -173,13 +184,15 @@ class Lesson(models.Model):
             teacher.courses.add(*self.subject.all())  # Add all subjects of this lesson to the teacher
             teacher.save()
 
-
     def __str__(self):
         subjects = ', '.join([str(subject) for subject in self.subject.all()])
         teachers = ', '.join([str(teacher) for teacher in self.teacher.all()])
         days_remaining = self.days_until_end()
         return f"{subjects} by {teachers} on {self. startdate} ({days_remaining} days remaining)"
 
+
+
+logger = logging.getLogger(__name__)
 
 class Appointment(models.Model):
     user = models.ForeignKey(UserAccount, on_delete=models.CASCADE)
@@ -197,27 +210,27 @@ class Appointment(models.Model):
             return f"{self.user} - {self.teacher} - {self.subject} - {self.lesson} ({days_remaining} days remaining) - {self.time_slot} on {self.day}"
         else:
             return f"{self.user} - {self.teacher} - {self.subject} - No lesson - {self.time_slot} on {self.day}"
+
     def save(self, *args, **kwargs):
         # Check availability
         if not self.check_availability(self.teacher, self.day, self.time_slot, self.duration):
             raise ValidationError("The teacher is not available at this time slot.")
 
-        # Handle the max_students logic
-        if self.lesson:
-            if self.lesson.max_students <= 0:
-                raise ValidationError("No more students can be added to this lesson.")
-            else:
-                self.lesson.max_students -= 1
-                self.lesson.save()
-
         super().save(*args, **kwargs)  # Save the appointment
 
+        # Update lesson and time slot availability after saving
+        if self.lesson:
+            self.lesson.max_students -= 1
+            self.lesson.save()
+
     def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)  # Delete the appointment
+
+        # Update lesson and time slot availability after deleting
         if self.lesson:
             self.lesson.max_students += 1
             self.lesson.save()
 
-        super().delete(*args, **kwargs)  # Delete the appointment
     @staticmethod
     def check_availability(teacher, day, time_slot, duration):
         start_time = datetime.combine(day, time_slot.time)
@@ -229,6 +242,7 @@ class Appointment(models.Model):
             time_slot__time__gte=time_slot.time
         )
         return not overlapping_appointments.exists()
+
 class Booking(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='bookings')
     date_slot = models.ForeignKey(DateSlot, on_delete=models.CASCADE, related_name='bookings')
