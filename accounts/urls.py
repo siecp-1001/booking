@@ -1,6 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import   user_appionmentview, user_dwatial,TeacherSchedulesAPIView, AppointmentViewSet,CreateAppointmentView, LessonTimesForSubjectView,TimeListAPIView, LessonsForSubjectView, DateSlotViewSet,DurationListCreateAPIView, BookingViewSet, EnrollmentViewSet, index, user_dashboard,CenterViewSet,StudentViewSet,show_urls_view,CustomTokenObtainPairView, UserCreateView,LessonViewSet, teacher_list, teacher_detail, teacher_create, teacher_update, teacher_delete,SubjectViewSet, AvailableDaysView, TeachersForSubjectView, StudentCenterAPIView,DurationListCreateschudelerAPIView
+from .views import   ChatbotAPI,user_appionmentview, user_dwatial,TeacherSchedulesAPIView, AppointmentViewSet,CreateAppointmentView, LessonTimesForSubjectView,TimeListAPIView, LessonsForSubjectView, DateSlotViewSet,DurationListCreateAPIView, BookingViewSet, EnrollmentViewSet, index, user_dashboard,CenterViewSet,StudentViewSet,show_urls_view,CustomTokenObtainPairView, UserCreateView,LessonViewSet, teacher_list, teacher_detail, teacher_create, teacher_update, teacher_delete,SubjectViewSet, AvailableDaysView, TeachersForSubjectView, StudentCenterAPIView,DurationListCreateschudelerAPIView
 
 router = DefaultRouter()
 router.register(r'centers', CenterViewSet)
@@ -16,6 +16,7 @@ urlpatterns = [
     path('index/', index, name='index'),
     path('dashboard/', user_dashboard, name='user_dashboard'),
     path('', include(router.urls)),
+    path('chat/', ChatbotAPI.as_view(), name='chatbot_api'),
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('create-user/', UserCreateView.as_view(), name='create_user'),
     path('show-urls/', show_urls_view, name='show_urls'),

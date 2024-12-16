@@ -11,6 +11,8 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 import secrets
 import string
+import torch
+import torch.nn as nn 
 from django.db.models.signals import m2m_changed
 from datetime import date, timedelta
 from django.utils.timezone import now
@@ -288,6 +290,30 @@ def save_user_profile(sender, instance, **kwargs):
             Center.objects.create(user=instance)
 
 
+
+
+
+
+class neuralnet(nn.Module):
+    def __init__(self, input_size, hidden_size, num_classes):
+        super(neuralnet, self).__init__()
+        self.l1 = nn.Linear(input_size, hidden_size) 
+        self.l2 = nn.Linear(hidden_size, hidden_size) 
+        self.l3 = nn.Linear(hidden_size, num_classes)
+        self.relu = nn.ReLU()
+    
+    def forward(self, x):
+        # if not x.is_floating_point():
+        x = x.float()
+        # print(x)
+        out = self.l1(x)
+        out = self.relu(out)
+        out = self.l2(out)
+        out = self.relu(out)
+        out = self.l3(out)
+        # no activation and no softmax at the end
+        return out
+    
 @receiver(post_save, sender=Appointment)
 def update_date_slot_availability(sender, instance, created, **kwargs):
     if created:

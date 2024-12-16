@@ -1,10 +1,12 @@
+import json
+import random
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
-from .serializers import  UserDetailSerializer,CreateAppointmentSerializer, DateSlotSerializer,TimesAvailableSerializer,DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
+from .models import  neuralnet,DateSlot, Booking, Course, Duration,DeleteRequest,Enrollment, Center, Student,Teacher,Appointment,Lesson
+from .serializers import ChatbotInputSerializer, UserDetailSerializer,CreateAppointmentSerializer, DateSlotSerializer,TimesAvailableSerializer,DurationscSerializer,LessonTimesSerializer,BookingSerializer,DurationSerializer, EnrollmentSerializer, CenterSerializer, StudentSerializer, CustomTokenObtainPairSerializer, CustomUserCreateSerializer, TeacherNameSerializer,TeacherSerializer,AppointmentSerializer,LessonSerializer,SubjectSerializer,LessonDurationSerializer
 from .permissions import IsStudentOrReadOnly,IsCenterUser
 from .signals import delete_request_created
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -24,6 +26,9 @@ from django.conf import settings
 from rest_framework.response import Response
 from rest_framework import status
 import logging
+from .nltk_ut import toknization, allwords
+import torch
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 def show_urls_view(request):
@@ -302,7 +307,7 @@ def user_dashboard(request):
 
 
 class SubjectViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.all()  # Default queryset
+    queryset = Course.objects.all()  
     serializer_class = SubjectSerializer
 
     def get_queryset(self):
@@ -320,7 +325,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
         if center is not None:
             return Course.objects.filter(center=center)
         else:
-            return Course.objects.none()  # Return an empty queryset if the user has no associated center
+            return Course.objects.none()  
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -346,7 +351,7 @@ class TeachersForSubjectView(generics.GenericAPIView):
 
         user = request.user
 
-        # Determine if the user is a teacher or a student and get the associated center
+       
         if hasattr(user, 'teacher'):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
@@ -356,7 +361,7 @@ class TeachersForSubjectView(generics.GenericAPIView):
         else:
             return Response({"detail": "User does not belong to a center"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Filter teachers based on the subject and user's center
+        
         lessons = Lesson.objects.filter(center=user_center, subject=course).distinct()
 
         # Extract teachers from these lessons
@@ -379,7 +384,6 @@ class LessonsForSubjectView(generics.GenericAPIView):
 
         user = request.user
 
-        # Determine if the user is a teacher or a student and get the associated center
         if hasattr(user, 'teacher'):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
@@ -413,7 +417,7 @@ class LessonTimesForSubjectView(generics.GenericAPIView):
 
         user = request.user
 
-        # Determine if the user is a teacher, student, or center and get the associated center
+        # Determine user
         if hasattr(user, 'teacher'):
             user_center = user.teacher.center
         elif hasattr(user, 'student'):
@@ -464,7 +468,7 @@ class DurationListCreateschudelerAPIView(generics.GenericAPIView):
             for duration in lesson.duration.all():
                 unique_durations.add(duration)
 
-        # Convert set to list for serialization
+        # Convert set to  serialization
         unique_durations_list = list(unique_durations)
 
         # Serialize the unique durations
@@ -526,7 +530,7 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
         try:
             user = self.request.user
 
-            # Get the date from the request
+            # Get the date 
             date_str = request.query_params.get('date')
             if date_str:
                 try:
@@ -618,7 +622,7 @@ class TeacherSchedulesAPIView(generics.GenericAPIView):
                     if any(k != "id" and k != "teacher" for k in schedule):
                         data.append(schedule)
 
-            # Return the response with the data or an empty list if no data is found
+            
             return Response(data, status=status.HTTP_200_OK)
 
         except user.DoesNotExist:
@@ -840,3 +844,70 @@ def user_appionmentview(request, pk):
         })
 
     return Response(data)
+
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Load the trained model and metadata
+FILE = 'accounts/data.pth'
+data = torch.load(FILE)
+input_size = data['input_size']
+hidden_size = data['hidden_size']
+output_size = data['output_size']
+all_words = data['all_words']
+tags = data['tags']
+model_state = data['model_state']
+
+# Load intents JSON
+with open('accounts/intents.json', 'r') as f:
+    intents = json.load(f)
+
+# Initialize and load the model
+model = neuralnet(input_size, hidden_size, output_size).to(device)
+model.load_state_dict(model_state)
+model.eval()
+
+bot_name = "Bob"
+
+
+class ChatbotAPI(APIView):
+    """
+    API endpoint to handle user queries and respond using the chatbot model.
+    """
+
+    def post(self, request):
+        """
+        Handles POST requests to the chatbot API.
+        """
+        
+        serializer = ChatbotInputSerializer(data=request.data)
+        if serializer.is_valid():
+            user_input = serializer.validated_data['message']
+
+            
+            sentence = toknization(user_input)
+            X = allwords(sentence, all_words)
+            X = X.reshape(1, X.shape[0])
+            X = torch.from_numpy(X).to(device).float()
+
+            # Predict the tag for the user input
+            output = model(X)
+            _, predicted = torch.max(output, dim=1)
+            tag = tags[predicted.item()]
+            probs = torch.softmax(output, dim=1)
+            prob = probs[0][predicted.item()]
+
+            # Respond based on the confidence score
+            if prob.item() > 0.75:
+                for intent in intents['intents']:
+                    if tag == intent['tag']:
+                        response = random.choice(intent['responses'])
+                        return Response({"response": response}, status=status.HTTP_200_OK)
+            else:
+                return Response(
+                    {"response": "I do not understand..."},
+                    status=status.HTTP_200_OK
+                )
+
+        # If the input is invalid, return validation errors
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

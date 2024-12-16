@@ -225,7 +225,7 @@ class TeacherSerializer(serializers.ModelSerializer):
         password = ''.join(secrets.choice(characters) for i in range(length))
         return password
 class TeacherNameSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source='user.name')  # Assuming 'name' is an attribute of the related UserAccount model
+    name = serializers.CharField(source='user.name')  
 
 
     class Meta:
@@ -235,7 +235,7 @@ from rest_framework import serializers
 
 
 class DateSlotSerializer(serializers.ModelSerializer):
-    time = serializers.CharField(required=True)  # Ensure this field is required
+    time = serializers.CharField(required=True)  
 
     class Meta:
         model = DateSlot
@@ -580,7 +580,12 @@ class CreateAppointmentSerializer(serializers.ModelSerializer):
         return appointment
 
 
-
+class ChatbotInputSerializer(serializers.Serializer):
+    message = serializers.CharField(
+        required=True, 
+        max_length=256, 
+        help_text="User input to the chatbot."
+    )
 class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
